@@ -64,18 +64,25 @@ class FaceEngineScanIntegrationTest extends TestCase
             'face_descriptor_if' => [[0.9, 0.8, 0.7]],
         ]);
 
-        // Default (human): payload desc ambil dari face_descriptor.
+        // Privasi biometrik: descriptor TIDAK dikirim ke browser (pencocokan server-side),
+        // tapi has_face tetap mengikuti kolom descriptor milik engine aktif.
         $res1 = $this->actingAs($this->admin)->get(route('absensi.scan'))->assertOk();
-        $payload1 = collect($res1->viewData('payload'));
-        $row1 = $payload1->firstWhere('uuid', $siswa->uuid);
-        $this->assertSame([[0.1, 0.2]], $row1['desc']);
+        $row1 = collect($res1->viewData('payload'))->firstWhere('uuid', $siswa->uuid);
+        $this->assertSame([], $row1['desc']);
+        $this->assertTrue($row1['has_face']);
 
-        // insightface: payload desc ambil dari face_descriptor_if, BUKAN face_descriptor.
+        // Siswa yang hanya punya descriptor Human tidak dianggap terdaftar di engine insightface.
+        $humanOnly = Siswa::create([
+            'id_kelas' => $this->kelas->uuid, 'nama' => 'Siswa Human Saja', 'nis' => '888002', 'jk' => 'P',
+            'face_descriptor' => [[0.1, 0.2]],
+        ]);
         Setting::set('face_engine', 'insightface');
         $res2 = $this->actingAs($this->admin)->get(route('absensi.scan'))->assertOk();
         $payload2 = collect($res2->viewData('payload'));
         $row2 = $payload2->firstWhere('uuid', $siswa->uuid);
-        $this->assertSame([[0.9, 0.8, 0.7]], $row2['desc']);
+        $this->assertSame([], $row2['desc']);
+        $this->assertTrue($row2['has_face']);
+        $this->assertFalse($payload2->firstWhere('uuid', $humanOnly->uuid)['has_face']);
     }
 
     public function test_facesim_tidak_pakai_kalibrasi_human_saat_engine_insightface(): void

@@ -20,13 +20,19 @@ class AbsensiController extends Controller
     /** Kelas homeroom guru saat ini bila BUKAN admin (null berarti admin = boleh semua kelas). */
     private function walikelasKelasId(): ?string
     {
-        return auth()->user()->canAccess('manage_absensi') ? null : auth()->user()->guru?->walikelas?->id_kelas;
+        $user = auth()->user();
+        // Kiosk publik (tanpa login) tidak terikat kelas — sama seperti admin.
+        if (! $user) {
+            return null;
+        }
+
+        return $user->canAccess('manage_absensi') ? null : $user->guru?->walikelas?->id_kelas;
     }
 
     /** Kelas yg diampu siswa ini sbg sekretaris kelas, atau null bila bukan sekretaris. */
     private function sekretarisKelasId(): ?string
     {
-        return auth()->user()->siswa?->sekretarisKelasId();
+        return auth()->user()?->siswa?->sekretarisKelasId();
     }
 
     /**

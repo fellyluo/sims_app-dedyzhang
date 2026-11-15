@@ -59,8 +59,9 @@ class FaceScanMatchingTest extends TestCase
 
         $this->assertStringContainsString("label='Mendekat ke kamera'", $source);
         $this->assertStringContainsString("label='Tahan diam, perbaiki cahaya'", $source);
-        $this->assertStringContainsString("label='Perjelas wajah'", $source);
-        $this->assertStringContainsString("label='Coba lagi, hadap lurus'", $source);
+        // Label hasil pencocokan server-side (objek _lastServerResult), bukan assignment lokal.
+        $this->assertStringContainsString("label: 'Perjelas wajah'", $source);
+        $this->assertStringContainsString("label: 'Hadap lurus'", $source);
         // Badge saat Human sama sekali tidak menemukan wajah di frame (bukan soal cocok/tidak)
         $this->assertStringContainsString('noFaceHint', $source);
         $this->assertStringContainsString('Wajah tidak terlihat', $source);
