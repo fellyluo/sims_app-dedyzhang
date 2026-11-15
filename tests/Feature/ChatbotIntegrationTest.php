@@ -228,7 +228,13 @@ class ChatbotIntegrationTest extends TestCase
         $types = collect($res->json('notifications'))->pluck('data.type')->all();
         $this->assertNotContains('chatbot_inbox', $types);
 
-        // Sampah historis ditandai dibaca oleh purge.
+        // Polling tidak mem-purge (dimatikan demi performa) — sampah hanya disembunyikan oleh
+        // filter query, jadi barisnya masih unread di DB.
+        $this->assertSame(1, $guru->fresh()->unreadNotifications()
+            ->where('data->type', 'chatbot_inbox')->count());
+
+        // Purge terjadi saat "tandai semua dibaca": sampah yang gagal gate ikut ditandai dibaca.
+        $this->actingAs($guru)->postJson(route('notifications.readAll'))->assertOk();
         $this->assertSame(0, $guru->fresh()->unreadNotifications()
             ->where('data->type', 'chatbot_inbox')->count());
 
