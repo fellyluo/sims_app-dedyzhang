@@ -58,16 +58,29 @@ class LanggananTest extends TestCase
         $this->assertLessThanOrEqual(92, $sisa);
     }
 
-    public function test_durasi_selain_3_6_12_ditolak(): void
+    public function test_durasi_di_bawah_1_bulan_ditolak(): void
     {
         $superadmin = $this->makeUser('superadmin', 'sa_durasi');
 
         $this->actingAs($superadmin)->post('/langganan', [
-            'durasi_bulan' => 5,
+            'durasi_bulan' => 0,
             'mulai_pada' => now()->toDateString(),
         ])->assertSessionHasErrors('durasi_bulan');
 
         $this->assertDatabaseCount('langganan', 0);
+    }
+
+    public function test_durasi_bebas_selain_3_6_12_diterima(): void
+    {
+        // Sejak 2026-09-25 durasi tidak lagi dibatasi preset 3/6/12 — minimal 1 bulan.
+        $superadmin = $this->makeUser('superadmin', 'sa_durasi_bebas');
+
+        $this->actingAs($superadmin)->post('/langganan', [
+            'durasi_bulan' => 5,
+            'mulai_pada' => now()->toDateString(),
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('langganan', ['durasi_bulan' => 5]);
     }
 
     public function test_role_lain_tidak_bisa_akses_halaman_langganan(): void
@@ -159,10 +172,7 @@ class LanggananTest extends TestCase
             ->assertOk()
             ->assertSee("Langganan aktif · sisa {$sisa} hari", false)
             ->assertSee("Durasi 6 bulan ({$total} hari)", false)
-            ->assertSee('Pratinjau masa langganan')
-            ->assertSee('3 bulan')
-            ->assertSee('6 bulan')
-            ->assertSee('12 bulan');
+            ->assertSee('Pratinjau masa langganan');
     }
 
     public function test_halaman_langganan_menampilkan_peringatan_expired(): void
@@ -190,14 +200,25 @@ class LanggananTest extends TestCase
             ->assertSee('hari');
     }
 
-    public function test_banner_tidak_tampil_untuk_non_superadmin(): void
+    public function test_banner_tidak_tampil_untuk_non_pengelola(): void
     {
-        $guru = $this->makeUser('admin', 'admin_banner');
+        // Banner hanya untuk superadmin & admin (sejak 2026-09-25) — guru tidak melihatnya.
+        $guru = $this->makeUser('guru', 'guru_banner');
         $this->buatLangganan(3, now()->addDays(7)->subMonths(3)->toDateString());
 
         $this->actingAs($guru)->get('/masukan')
             ->assertOk()
             ->assertDontSee('akan berakhir');
+    }
+
+    public function test_banner_tampil_untuk_admin(): void
+    {
+        $admin = $this->makeUser('admin', 'admin_banner');
+        $this->buatLangganan(3, now()->addDays(7)->subMonths(3)->toDateString());
+
+        $this->actingAs($admin)->get('/masukan')
+            ->assertOk()
+            ->assertSee('akan berakhir');
     }
 
     public function test_flash_setelah_set_menampilkan_hari(): void
