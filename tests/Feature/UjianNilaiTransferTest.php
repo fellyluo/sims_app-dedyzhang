@@ -24,9 +24,10 @@ use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 /**
- * Fase 4 modul Ujian: transfer nilai OTOMATIS (tanpa klik manual) begitu attempt
- * selesai dinilai — jalur PTS/PAS (via Ngajar+Semester aktif) & jalur Sumatif
- * (via Materi->id_ngajar+id_semester sendiri), keduanya taat kunci RaporKonfirmasi.
+ * Modul Ujian: transfer nilai ke buku nilai dilakukan MANUAL oleh guru/admin lewat
+ * tombol "Transfer Semua" (transfer otomatis saat submit dinonaktifkan sejak 2026-09-09).
+ * Jalur PTS/PAS (via Ngajar+Semester aktif) & jalur Sumatif (via Materi->id_ngajar+
+ * id_semester sendiri), keduanya taat kunci RaporKonfirmasi.
  */
 class UjianNilaiTransferTest extends TestCase
 {
@@ -64,6 +65,11 @@ class UjianNilaiTransferTest extends TestCase
         return [$user, $siswa, $attempt->fresh()];
     }
 
+    private function transferSemua(Ujian $ujian): void
+    {
+        $this->actingAs($this->guruUser)->post(route('ujian.hasil.transferSemua', $ujian))->assertRedirect();
+    }
+
     private function buatUjianPts(): array
     {
         $ujian = Ujian::create([
@@ -85,8 +91,13 @@ class UjianNilaiTransferTest extends TestCase
         [, $siswa, $attempt] = $this->buatSiswaDenganUjian($ujian, $ujianKelas, $soal, $benar, 'siswa_transfer_pts');
 
         $this->assertSame(UjianAttempt::STATUS_DINILAI, $attempt->status);
-        $this->assertSame('berhasil', $attempt->status_transfer_nilai);
+        // Submit TIDAK mentransfer otomatis — nilai baru masuk setelah "Transfer Semua".
+        $this->assertSame('belum', $attempt->status_transfer_nilai);
+        $this->assertDatabaseMissing('nilai_pts', ['id_siswa' => $siswa->uuid]);
 
+        $this->transferSemua($ujian);
+
+        $this->assertSame('berhasil', $attempt->fresh()->status_transfer_nilai);
         $this->assertDatabaseHas('nilai_pts', [
             'id_ngajar' => $this->ngajar->uuid, 'id_siswa' => $siswa->uuid,
             'id_semester' => $this->semester->id, 'nilai' => 100,
@@ -106,6 +117,8 @@ class UjianNilaiTransferTest extends TestCase
         $ujianKelas = UjianKelas::create(['id_ujian' => $ujian->uuid, 'id_kelas' => $this->kelas->uuid, 'token_masuk' => 'TRANSFERPAS']);
 
         [, $siswa] = $this->buatSiswaDenganUjian($ujian, $ujianKelas, $soal, $benar, 'siswa_transfer_pas');
+
+        $this->transferSemua($ujian);
 
         $this->assertDatabaseHas('nilai_pas', [
             'id_ngajar' => $this->ngajar->uuid, 'id_siswa' => $siswa->uuid,
@@ -129,6 +142,8 @@ class UjianNilaiTransferTest extends TestCase
 
         [, $siswa] = $this->buatSiswaDenganUjian($ujian, $ujianKelas, $soal, $benar, 'siswa_transfer_sum');
 
+        $this->transferSemua($ujian);
+
         $this->assertDatabaseHas('nilai_sumatif', ['id_materi' => $materi->uuid, 'id_siswa' => $siswa->uuid, 'nilai' => 100]);
     }
 
@@ -137,6 +152,9 @@ class UjianNilaiTransferTest extends TestCase
         RaporKonfirmasi::create(['id_ngajar' => $this->ngajar->uuid, 'id_semester' => $this->semester->id]);
         [$ujian, $ujianKelas, $soal, $benar] = $this->buatUjianPts();
         [, $siswa, $attempt] = $this->buatSiswaDenganUjian($ujian, $ujianKelas, $soal, $benar, 'siswa_transfer_terkunci');
+
+        $this->transferSemua($ujian);
+        $attempt->refresh();
 
         $this->assertSame(UjianAttempt::STATUS_DINILAI, $attempt->status, 'Attempt tetap difinalisasi walau transfer gagal.');
         $this->assertSame('gagal_terkunci', $attempt->status_transfer_nilai);
@@ -149,7 +167,8 @@ class UjianNilaiTransferTest extends TestCase
         $konfirmasi = RaporKonfirmasi::create(['id_ngajar' => $this->ngajar->uuid, 'id_semester' => $this->semester->id]);
         [$ujian, $ujianKelas, $soal, $benar] = $this->buatUjianPts();
         [, $siswa, $attempt] = $this->buatSiswaDenganUjian($ujian, $ujianKelas, $soal, $benar, 'siswa_transfer_ulang');
-        $this->assertSame('gagal_terkunci', $attempt->status_transfer_nilai);
+        $this->transferSemua($ujian);
+        $this->assertSame('gagal_terkunci', $attempt->fresh()->status_transfer_nilai);
 
         $konfirmasi->delete(); // admin membuka kunci rapor
 
