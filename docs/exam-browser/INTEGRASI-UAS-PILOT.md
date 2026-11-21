@@ -11,7 +11,7 @@ Android mengirim header navigasi bertanda tangan dan menyediakan ExamBrowser.sig
 ## Menyiapkan staging
 
 1. Sediakan dua origin HTTPS: SIMS staging dan Exam Console staging. Pakai database/data ujian uji, bukan jawaban siswa produksi.
-2. Pasang dependency SIMS dari composer.lock. SDK btive/exam-browser bersumber dari ../btive-exam-browser/sdk/php; salinan vendor harus berupa junction/direktori valid, bukan file placeholder link dari arsip Mac.
+2. Pasang dependency SIMS dari composer.lock (`composer install --no-dev`). SDK btive/exam-browser ikut di repo ini (`packages/btive-exam-browser`), jadi server tidak butuh folder lain. Perbarui salinan itu dengan `packages/sync-exam-browser-sdk.sh` bila SDK di repo btive-exam-browser berubah.
 3. Pastikan migration Exam Browser yang sudah ada tersedia pada database staging. Sesi ini tidak menjalankan migration atau deploy produksi.
 4. Operator Console membuat integrasi server dengan scope sessions.read dan sessions.finish. Simpan API key melalui pengelolaan environment server. API key tidak masuk APK, URL, Git, atau log.
 5. Atur EXAM_BROWSER_CONSOLE_URL pada server SIMS, EXAM_BROWSER_MODE=report, serta EXAM_BROWSER_DOWNLOAD_URL bila unduhan internal sudah tersedia. Konfigurasi dari SDK dimuat otomatis; tidak perlu menggandakan file config agar provider bekerja.
