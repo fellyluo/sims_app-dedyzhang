@@ -32,12 +32,7 @@ class SettingMemoTest extends TestCase
         $this->assertNull(Setting::get('key_yang_tak_pernah_diset'));
     }
 
-    /** Inti perbaikan: menyentuh BANYAK key BERBEDA (lewat set() maupun get()) sepanjang request
-     *  cuma boleh memicu SATU query SELECT ke tabel settings — bukan 1 query per key spt dulu.
-     *  DB langsung (bukan Setting::create/set) dipakai utk 2 baris pertama supaya TIDAK memicu
-     *  event `saved` yg akan menghangatkan memo lebih awal — memo baru boleh tersentuh saat
-     *  Setting::get() pertama kali dipanggil di bawah, persis skenario baca-banyak-key nyata. */
-    public function test_membaca_banyak_key_berbeda_hanya_satu_query(): void
+    public function test_membaca_key_tersimpan_sekaligus_dan_mengingat_key_yang_tidak_ada(): void
     {
         DB::table('settings')->insert([
             ['key' => 'a', 'value' => '1'],
@@ -49,16 +44,17 @@ class SettingMemoTest extends TestCase
         Setting::get('a');
         Setting::get('b');
         Setting::get('c');
-        Setting::get('d_tak_ada', 'default');
-        $log = DB::getQueryLog();
+        $selectQueries = array_values(array_filter(DB::getQueryLog(), fn ($query) => str_contains($query['query'], 'settings')));
+        $this->assertCount(1, $selectQueries, 'Key tersimpan harus dimuat sekaligus.');
+
+        DB::flushQueryLog();
+        $this->assertSame('default', Setting::get('d_tak_ada', 'default'));
+        $this->assertNull(Setting::get('d_tak_ada'));
+        $fallbackQueries = DB::getQueryLog();
         DB::disableQueryLog();
 
-        $selectQueries = array_filter($log, fn ($q) => str_contains($q['query'], 'select') && str_contains($q['query'], 'settings'));
-        $this->assertCount(
-            1,
-            $selectQueries,
-            'Membaca 4 key berbeda (termasuk yg tak ada) semestinya cuma 1 query SELECT — memo harus memuat semua baris sekaligus, bukan per-key.'
-        );
+        $this->assertCount(1, $fallbackQueries, 'Key yang belum ada di memo diperiksa sekali.');
+        $this->assertSame(['d_tak_ada'], $fallbackQueries[0]['bindings']);
     }
 
     /** Mengulang baca key YANG SAMA berkali-kali tetap harus 0 query tambahan (memo bekerja). */

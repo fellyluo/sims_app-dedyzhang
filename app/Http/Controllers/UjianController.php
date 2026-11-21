@@ -393,6 +393,9 @@ class UjianController extends Controller implements HasMiddleware
             'acak_soal'             => 'nullable|boolean',
             'acak_opsi'             => 'nullable|boolean',
             'tampilkan_pembahasan'  => 'nullable|boolean',
+            // B'tive Exam Browser (docs/exam-browser): '' = tidak wajib; 1–3 = level minimum.
+            'exam_browser_level'      => 'nullable|integer|in:1,2,3',
+            'exam_browser_session_id' => 'required_with:exam_browser_level|nullable|uuid',
         ]);
 
         $update = [
@@ -410,6 +413,9 @@ class UjianController extends Controller implements HasMiddleware
 
         if ($this->bolehAturKelas($request->user())) {
             $update['id_ujian_paket'] = $data['id_ujian_paket'] ?? null;
+            // Syarat keamanan perangkat hanya diatur admin/pengelola (bukan guru biasa).
+            $update['exam_browser_level'] = isset($data['exam_browser_level']) ? (int) $data['exam_browser_level'] : null;
+            $update['exam_browser_session_id'] = $update['exam_browser_level'] !== null ? ($data['exam_browser_session_id'] ?? null) : null;
         }
 
         // Mata pelajaran cuma boleh diubah selama masih draf & bukan sumatif (sumatif diturunkan

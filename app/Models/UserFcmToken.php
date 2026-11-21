@@ -14,6 +14,8 @@ class UserFcmToken extends Model
 {
     use HasUuids;
 
+    public const DEVICE_ANDROID_EXAM = 'android_exam';
+
     protected $primaryKey = 'uuid';
     protected $keyType = 'string';
     public $incrementing = false;

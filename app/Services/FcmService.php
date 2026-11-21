@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use Kreait\Firebase\Factory;
-use Kreait\Firebase\Messaging;
+use Kreait\Firebase\Contract\Messaging;
 use Kreait\Firebase\Messaging\AndroidConfig;
 use Kreait\Firebase\Messaging\CloudMessage;
 use Kreait\Firebase\Messaging\Notification;
@@ -71,6 +71,16 @@ class FcmService
                     'default_vibrate_timings' => true,
                 ],
             ]));
+
+        $this->messaging()->send($message);
+    }
+
+    /** Exam Browser berjalan di tablet bersama. Kirim sinyal generik melalui data-only. */
+    public function sendExamAlert(string $token): void
+    {
+        $message = CloudMessage::withTarget('token', $token)
+            ->withData(['type' => 'sims_exam_notice'])
+            ->withAndroidConfig(AndroidConfig::fromArray(['ttl' => '900s']));
 
         $this->messaging()->send($message);
     }

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "9e22afa1164568db8fe098465d1506c4",
+    "content-hash": "1eeb6c61286eb87f2ba943ce25b75d8a",
     "packages": [
         {
             "name": "bacon/bacon-qr-code",
@@ -398,6 +398,55 @@
                 }
             ],
             "time": "2026-02-10T14:33:43+00:00"
+        },
+        {
+            "name": "btive/exam-browser",
+            "version": "0.1.0",
+            "dist": {
+                "type": "path",
+                "url": "packages/btive-exam-browser",
+                "reference": "1754bd95b2dd27879fc97ee75c624dda83e88d87"
+            },
+            "require": {
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "orchestra/testbench": "^10.0",
+                "phpunit/phpunit": "^11.5"
+            },
+            "suggest": {
+                "laravel/framework": "Untuk middleware `eb:L2`, klien introspeksi berbasis Http, dan cache terenkripsi."
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Btive\\ExamBrowser\\Laravel\\ExamBrowserServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Btive\\ExamBrowser\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Btive\\ExamBrowser\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "phpunit"
+                ]
+            },
+            "license": [
+                "proprietary"
+            ],
+            "description": "SDK verifikasi B'tive Exam Browser untuk aplikasi ujian (PHP / Laravel).",
+            "transport-options": {
+                "relative": true
+            }
         },
         {
             "name": "carbonphp/carbon-doctrine-types",
@@ -12098,5 +12147,5 @@
         "php": "^8.2"
     },
     "platform-dev": {},
-    "plugin-api-version": "2.6.0"
+    "plugin-api-version": "2.9.0"
 }

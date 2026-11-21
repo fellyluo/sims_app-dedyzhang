@@ -187,6 +187,15 @@ class UjianPolicy
     }
 
     /**
+     * Memulihkan backup ujian (menulis ulang ujian, soal, attempt, jawaban & nilai dari file).
+     * Hanya admin/pengelola — audit 2026-11-17 C1: sebelumnya bisa dipanggil siapa pun yang login.
+     */
+    public function restoreBackup(User $user): bool
+    {
+        return $user->isAdmin() || $user->canAccess('manage_ujian');
+    }
+
+    /**
      * Membuka kembali ujian yang sudah ditutup. Hanya admin/pengelola yang berwenang.
      */
     public function reopen(User $user, Ujian $ujian): bool

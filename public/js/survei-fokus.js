@@ -11,9 +11,6 @@
     const progressLabel = document.getElementById('survei-progres-label');
     const submitMessage = document.getElementById('survei-kirim-pesan');
     const root = document.documentElement;
-    const halaman = (content.closest('[data-seb]') || content.closest('[data-daftar]') || document.querySelector('.survei-page'))?.dataset || {};
-    const pakaiSeb = halaman.seb === '1';
-    const pakaiKios = Boolean(halaman.periodeKios);
     const requestFullscreen = root.requestFullscreen || root.webkitRequestFullscreen;
     const fullscreenActive = () => Boolean(document.fullscreenElement || document.webkitFullscreenElement);
     // iPhone, WebView aplikasi, dan sebagian browser tidak mendukung/menolak layar penuh, atau
@@ -23,7 +20,7 @@
     const layarPenuhDidukung = typeof requestFullscreen === 'function'
         && (document.fullscreenEnabled ?? document.webkitFullscreenEnabled) !== false;
     let tanpaLayarPenuh = false;
-    const modeFokusAktif = () => pakaiSeb || pakaiKios || tanpaLayarPenuh || fullscreenActive();
+    const modeFokusAktif = () => tanpaLayarPenuh || fullscreenActive();
 
     function mintaLayarPenuh() {
         if (!layarPenuhDidukung) return Promise.resolve(false);
@@ -256,16 +253,8 @@
         submitMessage.hidden = true;
         updateProgress();
 
-        let urlKeluar;
         try {
             const body = new FormData(form);
-            if (pakaiSeb) body.set('bukti_seb', window.SafeExamBrowser?.security?.browserExamKey || '');
-            if (pakaiKios) {
-                body.set('bukti_kios', await window.webkit.messageHandlers.simsKios.postMessage({
-                    action: 'kirim', period: halaman.periodeKios,
-                    nonce: halaman.tantanganKios, session: body.get('tanda_sesi'),
-                }));
-            }
             const response = await fetch(form.action, {
                 method: 'POST',
                 body,
@@ -282,10 +271,6 @@
                     ? 'Periksa kembali pilihan kendala dan panjang komentar, lalu kirim ulang.'
                     : 'SIMS belum dapat mengonfirmasi penyimpanan. Silakan coba lagi.');
             }
-            if (pakaiSeb && !result.keluar) {
-                throw new Error('Jawaban tersimpan. Hubungi pemandu untuk keluar dari Safe Exam Browser.');
-            }
-            urlKeluar = result.kios_selesai || result.keluar;
         } catch (error) {
             submitting = false;
             submit.removeAttribute('aria-busy');
@@ -306,7 +291,7 @@
         try {
             if (fullscreenActive()) await (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
         } finally {
-            window.location.replace(urlKeluar || daftar);
+            window.location.replace(daftar);
         }
     });
     window.addEventListener('beforeunload', (event) => {
@@ -322,8 +307,8 @@
         window.location.reload();
     });
 
-    back.hidden = started || pakaiSeb || pakaiKios;
-    if (!layarPenuhDidukung && !pakaiSeb && !pakaiKios && !started) {
+    back.hidden = started;
+    if (!layarPenuhDidukung && !started) {
         start.textContent = 'Mulai survei';
         message.textContent = 'Siapkan waktu untuk menyelesaikan semua pertanyaan wajib. Jangan berpindah aplikasi selama mengisi.';
     }

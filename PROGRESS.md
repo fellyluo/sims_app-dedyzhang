@@ -564,3 +564,18 @@ Catatan: tautan Jadwal Mengajar pada akun demo menghasilkan 403 dari otorisasi e
 ## Teks tautan-tombol rata tengah — 2026-11-14
 
 - [x] Tema memberi `min-height` 40–44 px pada `.btn-*`; tautan `<a class="btn-primary">` (mis. "Unduh PDF rekap guru") teksnya menempel kiri-atas. `sims-appearance.css`: tautan bergaya tombol jadi `inline-flex` + rata tengah, dengan `:where()` (specificity 0) agar utilitas Tailwind tetap menang. Dicek di browser + 10 halaman tanpa regresi. Tanpa commit/push.
+
+## Perbaikan tampilan Asisten Guru — 2026-11-16
+
+- [x] Jawaban Nalar Guru kehilangan baris baru: `.nalar-answer` menimpa `white-space: pre-wrap` dengan `normal`; deklarasi penimpa dihapus sehingga soal bernomor tampil per baris.
+- [x] Error konsol `Cannot read properties of null (reading 'hint'/'message'/'suggest_camera')` di setiap pemuatan halaman: kotak error materi membaca `materialError.*` saat nilainya null. Diganti optional chaining (3 blok).
+- [x] Catatan: generator yang tampak tidak muncul saat pengujian ternyata artefak lingkungan uji (pane/WebView tersembunyi tidak menjalankan `requestAnimationFrame`, yang dipakai `x-show` Alpine), bukan bug aplikasi.
+- [x] Test AI/Asisten Guru: 185 lulus (1 skip). Tanpa commit/push.
+
+## Sinkron origin 29c6a21 & penghapusan UI SEB/SIMS Kios — 2026-11-16
+
+- [x] Tarik `origin/main` (29c6a21 "Perbaikan Absensi") ke branch kerja (merge b0b15c5); konflik `AbsensiController` (perbaikan kiosk tanpa login yang setara) memakai versi Dedy. `main` lokal = `origin/main`.
+- [x] Commit tersebut menghapus 6 rute SEB/Kios tetapi view masih memanggilnya: halaman detail survei error 500 (`survei.kios.wajib` di `sesi.blade.php`). Keputusan FL: hapus UI SEB/Kios — form "Wajibkan SIMS Kios" dihapus, chip mode surveyor jadi "Token kelas", `survei/seb.blade.php`, `survei/kios.blade.php`, `public/js/survei-seb.js`, `public/js/survei-kios.js` dihapus.
+- [x] Bug kritis ikut diperbaiki: `form.blade.php` tidak lagi punya `data-seb`, tetapi `survei-fokus.js` masih `closest('[data-seb]').dataset` → skrip berhenti dan siswa tidak bisa mulai mengisi survei. Logika SEB/Kios dibuang dari skrip.
+- [x] Test: hapus 2 test SEB/Kios, sesuaikan test surveyor & Mode Ujian; test dock riwayat 10 → 6 item (batas baru Dedy); test frontend baru memastikan atribut `data-*` yang dicari skrip ada di formulir. 355 test PHP terkait lulus, frontend 26/26. Diverifikasi di browser (siswa demo: tombol mulai aktif, tanpa error).
+- [ ] Sisa kode backend SEB/Kios tanpa rute (method `verifikasiSeb/verifikasiKios/keluarSeb/selesaiKios/wajibkan*`, `App\Survei\SafeExamBrowser`, `App\Survei\Kios`, `config/survei.php`, `apps/sims-kios-macos`, `docs/survei-safe-exam-browser.md`, variabel `SURVEI_SEB_*/SURVEI_KIOS_*`) belum dibersihkan — tunggu konfirmasi Dedy. Tanpa commit/push.

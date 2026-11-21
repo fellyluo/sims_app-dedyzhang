@@ -1209,14 +1209,17 @@ Route::middleware(['auth', EnsureFaceRegistered::class])->group(function () {
         // kalau didaftar SETELAHNYA, Laravel akan salah cocokkan "saya" sbg UUID ujian
         // (404 model-not-found) dan handler ini tak akan pernah tercapai.
         Route::get('/saya', [UjianSiswaController::class, 'index'])->name('siswa.index');
-        Route::get('/{ujian}/mulai', [UjianSiswaController::class, 'gate'])->name('siswa.gate');
+        // B'tive Exam Browser per ujian (middleware 'exam.browser', docs/exam-browser): halaman & XHR pengerjaan.
+        // Tidak dipasang di POST mulai (navigasi form POST tak bisa diberi header di WebView; dilanjut
+        // redirect GET kerjakan yg dijaga) dan keluar-fullscreen (sendBeacon tak bisa diberi header).
+        Route::get('/{ujian}/mulai', [UjianSiswaController::class, 'gate'])->middleware('exam.browser')->name('siswa.gate');
         Route::post('/{ujian}/mulai', [UjianSiswaController::class, 'start'])->middleware('throttle:10,1')->name('siswa.start');
-        Route::get('/{ujian}/kerjakan/{attempt}', [UjianSiswaController::class, 'kerjakan'])->name('siswa.kerjakan');
-        Route::post('/{ujian}/kerjakan/{attempt}/jawab', [UjianSiswaController::class, 'simpanJawaban'])->middleware('throttle:60,1')->name('siswa.jawab');
-        Route::post('/{ujian}/kerjakan/{attempt}/sinkron-batch', [UjianSiswaController::class, 'sinkronBatch'])->middleware('throttle:120,1')->name('siswa.sinkronBatch');
-        Route::get('/{ujian}/kerjakan/{attempt}/status', [UjianSiswaController::class, 'status'])->middleware('throttle:360,1')->name('siswa.status');
+        Route::get('/{ujian}/kerjakan/{attempt}', [UjianSiswaController::class, 'kerjakan'])->middleware('exam.browser')->name('siswa.kerjakan');
+        Route::post('/{ujian}/kerjakan/{attempt}/jawab', [UjianSiswaController::class, 'simpanJawaban'])->middleware(['throttle:60,1', 'exam.browser'])->name('siswa.jawab');
+        Route::post('/{ujian}/kerjakan/{attempt}/sinkron-batch', [UjianSiswaController::class, 'sinkronBatch'])->middleware(['throttle:120,1', 'exam.browser'])->name('siswa.sinkronBatch');
+        Route::get('/{ujian}/kerjakan/{attempt}/status', [UjianSiswaController::class, 'status'])->middleware(['throttle:360,1', 'exam.browser'])->name('siswa.status');
         Route::post('/{ujian}/kerjakan/{attempt}/keluar-fullscreen', [UjianSiswaController::class, 'laporKeluar'])->middleware('throttle:30,1')->name('siswa.keluar');
-        Route::post('/{ujian}/kerjakan/{attempt}/kumpul', [UjianSiswaController::class, 'submit'])->middleware('throttle:10,1')->name('siswa.submit');
+        Route::post('/{ujian}/kerjakan/{attempt}/kumpul', [UjianSiswaController::class, 'submit'])->middleware(['throttle:10,1', 'exam.browser'])->name('siswa.submit');
         Route::get('/{ujian}/hasil-saya/{attempt}', [UjianSiswaController::class, 'hasil'])->name('siswa.hasil');
 
         // Paket (folder periode ujian: Ruangan/Jadwal/Pengawas) Ã¢â‚¬â€ SEMUA static-prefixed
@@ -1521,8 +1524,6 @@ Route::middleware(['auth', EnsureFaceRegistered::class, NonaktifSaatModeUjian::c
     Route::get('/periode/{periode}/cetak-soal', 'cetakSoal')->name('pertanyaan.cetak');
     Route::delete('/periode/{periode}', 'destroy')->name('destroy');
     Route::post('/periode/{periode}/tutup', 'tutup')->name('tutup');
-    Route::post('/periode/{periode}/wajib-seb', 'wajibkanSeb')->name('seb.wajib');
-    Route::post('/periode/{periode}/wajib-kios', 'wajibkanKios')->name('kios.wajib');
     Route::post('/periode/{periode}/sesi', 'mulaiSesi')->middleware('throttle:15,1,survei-sesi')->name('sesi.mulai');
     Route::post('/periode/{periode}/sesi/{sesiId}/token', 'gantiToken')->whereUuid('sesiId')->middleware('throttle:15,1,survei-sesi')->name('sesi.token');
     Route::post('/periode/{periode}/sesi/{sesiId}/akhiri', 'akhiriSesi')->whereUuid('sesiId')->name('sesi.akhiri');
@@ -1534,10 +1535,6 @@ Route::middleware(['auth', EnsureFaceRegistered::class, NonaktifSaatModeUjian::c
     Route::get('/masuk/{periode}', 'masuk')->name('masuk');
     Route::get('/periode/{periode}/isi', 'form')->name('form');
     Route::post('/periode/{periode}/token', 'bukaDenganToken')->middleware('throttle:8,1,survei-token')->name('token');
-    Route::post('/periode/{periode}/verifikasi-seb', 'verifikasiSeb')->middleware('throttle:10,1,survei-seb')->name('seb.verifikasi');
-    Route::post('/periode/{periode}/verifikasi-kios', 'verifikasiKios')->middleware('throttle:10,1,survei-kios')->name('kios.verifikasi');
-    Route::get('/periode/{periode}/selesai-kios', 'selesaiKios')->name('kios.selesai');
-    Route::get('/selesai/{kode}', 'keluarSeb')->whereUuid('kode')->name('seb.keluar');
     Route::post('/periode/{periode}/isi', 'kirimBatch')->middleware('throttle:30,1')->name('kirim-batch');
     Route::get('/isi/{target}', 'isi')->name('isi');
     Route::post('/isi/{target}', 'kirim')->middleware('throttle:30,1')->name('kirim');

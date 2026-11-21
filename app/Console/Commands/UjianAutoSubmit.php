@@ -22,7 +22,8 @@ class UjianAutoSubmit extends Command
         // Termasuk yg dikunci=true — siswa terkunci yg lewat deadline tetap wajib
         // difinalisasi, jangan dibiarkan menggantung selamanya menunggu guru reset.
         $expired = UjianAttempt::where('status', UjianAttempt::STATUS_IN_PROGRESS)
-            ->where('batas_waktu_pada', '<=', now())
+            // Beri masa tenggang sinkron dulu supaya antrean jawaban terakhir di perangkat sempat masuk.
+            ->where('batas_waktu_pada', '<=', now()->subSeconds(UjianAttempt::MASA_TENGGANG_SINKRON_DETIK))
             ->get();
 
         foreach ($expired as $attempt) {

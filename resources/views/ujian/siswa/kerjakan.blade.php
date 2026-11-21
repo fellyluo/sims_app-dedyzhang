@@ -19,6 +19,7 @@
 <div id="ujian-root" class="max-w-2xl mx-auto pb-24"
      x-data="ujianKerjakan({
         attemptUuid: {{ Js::from($attempt->uuid) }},
+        nativeVerified: {{ Js::from(\App\Http\Middleware\WajibExamBrowser::perangkatSah(request())) }},
         soal: {{ Js::from($soalTampil) }},
         jawabanAwal: {{ Js::from($initJawaban) }},
         batasWaktu: {{ Js::from($attempt->batas_waktu_pada?->toIso8601String()) }},
@@ -29,7 +30,6 @@
         urlSubmit: {{ Js::from(route('ujian.siswa.submit', [$ujian, $attempt])) }},
         urlTerkunci: {{ Js::from(route('ujian.siswa.gate', $ujian)) }},
      })"
-     x-init="init()"
      @copy.prevent @cut.prevent @paste.prevent @contextmenu.prevent
 >
     {{-- Overlay: wajib layar penuh sebelum mulai (gesture langsung dari klik). Disembunyikan
@@ -42,11 +42,17 @@
             <i data-lucide="maximize" class="w-14 h-14 text-primary mx-auto"></i>
             <h2 class="text-white text-lg font-bold m-0">Mode Ujian - Layar Penuh</h2>
             <p class="text-slate-300 text-sm m-0 leading-relaxed">Ketuk tombol di bawah untuk masuk layar penuh dan memulai pengerjaan. Waktu sudah berjalan.</p>
-            <button type="button" @click="masukLayarPenuh()" class="btn-primary px-6 py-3 rounded-xl text-sm font-bold inline-flex items-center gap-2">
+            <button type="button" x-show="layarPenuhDidukung" @click="masukLayarPenuh()" class="btn-primary px-6 py-3 rounded-xl text-sm font-bold inline-flex items-center gap-2">
                 <i data-lucide="maximize" class="w-4 h-4"></i> Masuk Layar Penuh
             </button>
-            <button type="button" @click="lanjutTanpaLayarPenuh()" class="block mx-auto text-xs text-slate-400 hover:text-slate-200 underline">
-                HP tidak bisa masuk layar penuh? Lanjutkan tanpa layar penuh
+            <p x-show="layarPenuhGagal" role="status" class="text-sm text-amber-300">
+                Layar penuh tidak berhasil dibuka. Coba lagi atau gunakan browser lain.
+            </p>
+            <p x-show="!layarPenuhDidukung" class="text-sm text-slate-300">
+                Browser ini tidak mendukung layar penuh. Pindah tab tetap dicatat.
+            </p>
+            <button type="button" x-show="!layarPenuhDidukung" @click="lanjutTanpaLayarPenuh()" class="block mx-auto text-xs text-slate-400 hover:text-slate-200 underline">
+                Lanjutkan tanpa layar penuh
             </button>
         </div>
     </div>
@@ -65,7 +71,7 @@
     </div>
 
     {{-- Navigator nomor soal --}}
-    <div class="flex flex-wrap gap-1.5 mb-4">
+    <div x-show="fsActive && !terkunci" x-cloak class="flex flex-wrap gap-1.5 mb-4">
         <template x-for="(s, i) in soal" :key="s.uuid">
             <button type="button" @click="pindah(i)"
                     class="w-8 h-8 rounded-lg text-xs font-bold flex-shrink-0 border"
@@ -78,7 +84,7 @@
     </div>
 
     {{-- Soal aktif --}}
-    <template x-for="(s, i) in soal" :key="'panel-'+s.uuid">
+    <template x-for="(s, i) in (fsActive && !terkunci ? soal : [])" :key="'panel-'+s.uuid">
         <div x-show="i === idx" x-cloak class="card p-5 space-y-4">
             <div class="flex items-center justify-between">
                 <p class="text-xs text-slate-400">Soal <span x-text="i+1"></span> dari <span x-text="soal.length"></span> - <span x-text="s.poin"></span> poin</p>
@@ -136,7 +142,7 @@
 
             {{-- essay --}}
             <div x-show="s.tipe==='essay'" x-cloak>
-                <textarea rows="6" class="form-input" placeholder="Tulis jawaban Anda di sini..."
+                <textarea rows="6" maxlength="10000" class="form-input" placeholder="Tulis jawaban Anda di sini..."
                           x-model="jawaban[s.uuid]" @input="tandaiBerubah(s.uuid)"></textarea>
             </div>
 
@@ -293,13 +299,18 @@ function getSafeStorage() {
 }
 
 function ujianKerjakan(cfg) {
+    const el = document.documentElement;
+    const requestFullscreen = el.requestFullscreen || el.webkitRequestFullscreen;
+
     return {
         soal: cfg.soal,
         jawaban: cfg.jawabanAwal || {},
         batasWaktu: cfg.batasWaktu ? new Date(cfg.batasWaktu).getTime() : null,
         idx: 0,
         sisaDetik: 0,
-        fsActive: false,
+        fsActive: !!cfg.nativeVerified,
+        layarPenuhDidukung: typeof requestFullscreen === 'function',
+        layarPenuhGagal: false,
         terkunci: false,
         mengumpulkan: false,
         mengumpulkanOtomatis: false,
@@ -311,6 +322,11 @@ function ujianKerjakan(cfg) {
         _storageKey: 'sims_jawaban_' + (cfg.attemptUuid || 'default'),
         _dirtyQueue: {},
         _isSyncing: false,
+        // Review 2026-11-21 #1–2: error 4xx yang tak sembuh dengan mengulang (validasi, sudah
+        // dikumpulkan) tidak boleh memblokir pengumpulan selamanya; auto-submit diulang dengan jeda.
+        _syncGagalPermanen: false,
+        _autoRetryAt: 0,
+        _simpanCadanganLokal: false,
         _timerHandle: null,
         _syncTimer: null,
         _debounceTimer: null,
@@ -322,6 +338,18 @@ function ujianKerjakan(cfg) {
         
         _statusHandle: null,
         _csrf: document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+
+        // B'tive Exam Browser (docs/exam-browser): bila halaman dibuka di Exam Browser, setiap XHR ke
+        // server diberi header X-EB-* lewat window.ExamBrowser.sign(). Di browser biasa → {} (tanpa header).
+        async _ebHeaders(url) {
+            if (!window.ExamBrowser || typeof window.ExamBrowser.sign !== 'function') return {};
+            try {
+                const s = await window.ExamBrowser.sign(new URL(url, window.location.href).href);
+                return { 'X-EB-Session': s.session, 'X-EB-Ts': String(s.ts), 'X-EB-Request-Hash': s.hash, 'X-EB-Version': s.version, 'X-EB-Protocol': '1' };
+            } catch (e) {
+                return {};
+            }
+        },
 
         renderIcons() {
             if (window.lucide && typeof window.lucide.createIcons === 'function') {
@@ -351,6 +379,10 @@ function ujianKerjakan(cfg) {
                     if (localData && typeof localData === 'object') {
                         // Merge jawaban lokal dan server (jawaban lokal lebih baru/prioritas)
                         this.jawaban = { ...this.jawaban, ...localData };
+                        for (const id of Object.keys(localData)) {
+                            const payload = this.buildPayload(id);
+                            if (payload) this._dirtyQueue[id] = payload;
+                        }
                     }
                 } else {
                     // Seed awal ke storage lokal dari database
@@ -371,14 +403,18 @@ function ujianKerjakan(cfg) {
 
             const syncFs = () => {
                 const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+                const sebelumnyaAktif = this.fsActive;
                 this.fsActive = on;
-                if (!on && !this.intentional) this.laporKeluar('keluar_fullscreen');
+                if (on) this.layarPenuhGagal = false;
+                if (sebelumnyaAktif && !on && !this.intentional) this.laporKeluar('keluar_fullscreen');
                 this.$nextTick(() => this.renderIcons());
             };
-            document.addEventListener('fullscreenchange', syncFs);
-            document.addEventListener('webkitfullscreenchange', syncFs);
+            if (!cfg.nativeVerified && this.layarPenuhDidukung) {
+                document.addEventListener('fullscreenchange', syncFs);
+                document.addEventListener('webkitfullscreenchange', syncFs);
+            }
             document.addEventListener('visibilitychange', () => {
-                if (document.hidden && !this.intentional && this.fsActive) {
+                if (!cfg.nativeVerified && document.hidden && !this.intentional && this.fsActive) {
                     this.laporKeluar('ganti_tab');
                 }
                 // Kirim jawaban tertunda di background saat tab diminimalkan
@@ -397,29 +433,23 @@ function ujianKerjakan(cfg) {
             this.$nextTick(() => this.renderIcons());
         },
 
-        masukLayarPenuh() {
-            const el = document.documentElement;
-            const req = el.requestFullscreen || el.webkitRequestFullscreen;
-            if (req) {
-                Promise.resolve(req.call(el)).then(() => { this.fsActive = true; }).catch(() => {});
-            } else {
-                this.fsActive = true; // browser tanpa Fullscreen API (fallback jujur, bukan proteksi penuh)
+        async masukLayarPenuh() {
+            if (!this.layarPenuhDidukung) return;
+            this.layarPenuhGagal = false;
+
+            try {
+                await requestFullscreen.call(el);
+                this.fsActive = !!(document.fullscreenElement || document.webkitFullscreenElement);
+                this.layarPenuhGagal = !this.fsActive;
+            } catch {
+                this.layarPenuhGagal = true;
             }
         },
 
-        // Sebagian HP siswa gagal/menolak Fullscreen API (requestFullscreen() reject diam2,
-        // lihat catch() di atas) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â tanpa jalan keluar ini siswa tsb terjebak permanen di
-        // overlay ini, tak pernah bisa mulai ujian sama sekali. `intentional` dipasang SEBELUM
-        // fsActive=true supaya syncFs() (yg jalan lewat event fullscreenchange kalau memang
-        // sempat browser sempat masuk fullscreen sebentar lalu gagal) tak salah lapor
-        // "keluar_fullscreen" akibat aksi ini sendiri.
         lanjutTanpaLayarPenuh() {
-            this.intentional = true;
+            if (this.layarPenuhDidukung) return;
             this.fsActive = true;
-            this.$nextTick(() => {
-                this.intentional = false;
-                this.renderIcons();
-            });
+            this.$nextTick(() => this.renderIcons());
         },
 
         formatWaktu(detik) {
@@ -434,7 +464,10 @@ function ujianKerjakan(cfg) {
         tickCountdown() {
             if (!this.batasWaktu) return;
             this.sisaDetik = Math.max(0, Math.round((this.batasWaktu - Date.now()) / 1000));
-            if (this.sisaDetik <= 0 && !this.terkunci && !this.mengumpulkan) {
+            if (this.sisaDetik > 0 && this.sisaDetik <= 10 && Object.keys(this._dirtyQueue).length > 0) {
+                this.flushPendingAnswers();
+            }
+            if (this.sisaDetik <= 0 && !this.terkunci && !this.mengumpulkan && !this._finalizing && Date.now() >= this._autoRetryAt) {
                 this.intentional = true;
                 this.mengumpulkan = true;
                 // Jeda acak halus 100ms - 2000ms saat auto-submit waktu habis
@@ -530,31 +563,43 @@ function ujianKerjakan(cfg) {
         },
 
         async flushPendingAnswers(forceWait = false) {
-            if (this.terkunci) return;
+            if (this.terkunci) return false;
+            if (this._isSyncing) {
+                if (!forceWait) return false;
+                const deadline = Date.now() + 15000;
+                while (this._isSyncing && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+                if (this._isSyncing) return false;
+                if (this.terkunci) return false;
+            }
             const keys = Object.keys(this._dirtyQueue);
-            if (keys.length === 0) return;
+            if (keys.length === 0) return true;
 
             if (this._isSyncing && !forceWait) return;
             this._isSyncing = true;
+            this._syncGagalPermanen = false;
 
-            const itemsToSend = keys.map(k => this._dirtyQueue[k]);
+            const itemsToSend = keys.map(k => JSON.parse(JSON.stringify(this._dirtyQueue[k])));
 
             let success = false;
             for (let attempt = 0; attempt < 3; attempt++) {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 15000);
                 try {
                     const res = await fetch(cfg.urlSinkronBatch, {
+                        signal: controller.signal,
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'Accept': 'application/json',
                             'X-CSRF-TOKEN': this._csrf,
+                            ...(await this._ebHeaders(cfg.urlSinkronBatch)),
                         },
                         body: JSON.stringify({ jawaban: itemsToSend }),
                     });
 
                     if (res.ok) {
-                        keys.forEach(k => {
-                            if (this._dirtyQueue[k] && this._dirtyQueue[k].id_soal === k) {
+                        keys.forEach((k, index) => {
+                            if (JSON.stringify(this._dirtyQueue[k]) === JSON.stringify(itemsToSend[index])) {
                                 delete this._dirtyQueue[k];
                             }
                         });
@@ -578,6 +623,13 @@ function ujianKerjakan(cfg) {
                         }
                     }
 
+                    // 4xx selain 403/408/429: mengulang tidak akan berhasil (mis. validasi, sudah dikumpulkan,
+                    // lewat masa tenggang). Berhenti mencoba; kumpulkan() memutuskan langkah berikutnya.
+                    if (res.status >= 400 && res.status < 500 && ![403, 408, 429].includes(res.status)) {
+                        this._syncGagalPermanen = true;
+                        break;
+                    }
+
                     // Jeda backoff jika server 503
                     if (res.status === 503 && attempt < 2) {
                         await new Promise(r => setTimeout(r, (attempt + 1) * 350));
@@ -588,6 +640,8 @@ function ujianKerjakan(cfg) {
                         await new Promise(r => setTimeout(r, (attempt + 1) * 350));
                         continue;
                     }
+                } finally {
+                    clearTimeout(timeout);
                 }
             }
 
@@ -598,30 +652,33 @@ function ujianKerjakan(cfg) {
                 this.simpanStatus = 'Tersimpan di perangkat (menunggu sinkron)';
                 this.simpanError = false;
             }
+            return success && Object.keys(this._dirtyQueue).length === 0;
         },
 
         flushPendingAnswersBeacon() {
             try {
                 const keys = Object.keys(this._dirtyQueue);
-                if (keys.length === 0) return;
+                if (keys.length === 0) return true;
                 const items = keys.map(k => this._dirtyQueue[k]);
                 const payload = JSON.stringify({ jawaban: items });
                 
-                fetch(cfg.urlSinkronBatch, {
+                // Best-effort saat halaman ditinggal: tanda tangan Exam Browser asinkron, lalu kirim keepalive.
+                this._ebHeaders(cfg.urlSinkronBatch).then((eb) => fetch(cfg.urlSinkronBatch, {
                     method: 'POST',
                     keepalive: true,
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
-                        'X-CSRF-TOKEN': this._csrf
+                        'X-CSRF-TOKEN': this._csrf,
+                        ...eb,
                     },
                     body: payload
-                }).catch(() => {});
+                })).catch(() => {});
             } catch (e) {}
         },
 
         laporKeluar(tipe) {
-            if (this.terkunci) return;
+            if (cfg.nativeVerified || this.terkunci) return;
             this.kunci();
             try {
                 const payload = JSON.stringify({ tipe });
@@ -663,13 +720,40 @@ function ujianKerjakan(cfg) {
                 },
             });
         },
-        async kumpulkan(otomatis) {
-            // 1. Pastikan seluruh jawaban tertunda di dirtyQueue telah disinkronkan ke server
-            if (Object.keys(this._dirtyQueue).length > 0) {
-                this.simpanStatus = 'Menyinkronkan jawaban akhir...';
-                await this.flushPendingAnswers(true);
-            }
+        // Salinan lokal hanya dihapus bila semua jawaban sudah diakui server (review 2026-11-21 #1).
+        _hapusCadanganBilaAman() {
+            if (this._simpanCadanganLokal) return;
+            try { this._storage.removeItem(this._storageKey); } catch (e) {}
+        },
 
+        // Timer dijalankan lagi setelah pengumpulan gagal. Auto-submit diulang tiap 10 detik, bukan tiap detik.
+        _lanjutkanTimer(otomatis) {
+            if (otomatis) this._autoRetryAt = Date.now() + 10000;
+            clearInterval(this._timerHandle);
+            this._timerHandle = setInterval(() => this.tickCountdown(), 1000);
+        },
+
+        async kumpulkan(otomatis) {
+            if (this._finalizing) return;
+            this._finalizing = true;
+            this.intentional = true;
+            this.simpanStatus = 'Menyinkronkan jawaban akhir...';
+            const synced = await this.flushPendingAnswers(true);
+            this._finalizing = false;
+            if (this.terkunci) return;
+            const adaBelumTersinkron = !synced || Object.keys(this._dirtyQueue).length > 0;
+            // Review 2026-11-21 #1–2: auto-submit waktu habis & error permanen TETAP mengumpulkan
+            // (server sudah memegang jawaban yang tersinkron). Salinan lokal jawaban yang belum diakui
+            // dipertahankan untuk rekonsiliasi pengawas. Hanya kumpul manual dgn gangguan jaringan
+            // sementara yang meminta siswa mencoba lagi.
+            if (adaBelumTersinkron && !otomatis && !this._syncGagalPermanen) {
+                this.intentional = false;
+                this.mengumpulkan = false;
+                this.simpanStatus = 'Belum terkumpul: jawaban terakhir masih tersimpan di perangkat. Sambungkan jaringan dan coba lagi.';
+                this.simpanError = true;
+                return;
+            }
+            this._simpanCadanganLokal = adaBelumTersinkron;
             // SENGAJA tak pakai kunci() di sini ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â kunci() menyalakan `terkunci` yg
             // menampilkan overlay "Ujian Terkunci ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Anda keluar dari layar penuh/berpindah
             // tab", pesan yg salah konteks (& menakutkan) utk submit yg SAH. `mengumpulkan`
@@ -689,7 +773,7 @@ function ujianKerjakan(cfg) {
                 try {
                     res = await fetch(cfg.urlSubmit, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': this._csrf },
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': this._csrf, ...(await this._ebHeaders(cfg.urlSubmit)) },
                     });
 
                     isWafBlock = res.status === 403 && !res.headers.get('content-type')?.includes('application/json');
@@ -722,7 +806,7 @@ function ujianKerjakan(cfg) {
                         content: 'Koneksi ke server sedang padat. Seluruh jawaban Anda tetap aman di perangkat. Silakan klik tombol Kumpulkan Ujian sekali lagi.',
                         type: 'orange'
                     });
-                    this._timerHandle = setInterval(() => this.tickCountdown(), 1000);
+                    this._lanjutkanTimer(otomatis);
                     return;
                 }
 
@@ -731,15 +815,19 @@ function ujianKerjakan(cfg) {
                 }
                 
                 if (res.redirected) { 
-                    try { this._storage.removeItem(this._storageKey); } catch (e) {}
+                    this._hapusCadanganBilaAman();
                     window.location.href = res.url; 
                     return; 
                 }
                 
                 if (res.ok) {
-                    try { this._storage.removeItem(this._storageKey); } catch (e) {}
+                    this._hapusCadanganBilaAman();
                     try {
                         const data = await res.json();
+                        // Jawaban sudah tersimpan → minta Exam Browser membuka kunci perangkat seketika.
+                        if (data && data.exam_browser_finish_token && window.ExamBrowser && typeof window.ExamBrowser.finish === 'function') {
+                            try { await window.ExamBrowser.finish(data.exam_browser_finish_token); } catch (e) {}
+                        }
                         if (data && data.redirect) {
                             window.location.href = data.redirect;
                             return;
@@ -749,13 +837,24 @@ function ujianKerjakan(cfg) {
                     return;
                 }
                 
+                // 422 = attempt sudah dikumpulkan/difinalisasi server (mis. cron atau guru). Halaman gate
+                // akan mengarahkan ke hasil; jangan mengulang pengumpulan terus-menerus.
+                if (res.status === 422) {
+                    window.location.href = cfg.urlTerkunci;
+                    return;
+                }
+                if (res.status === 403 && !isWafBlock) {
+                    this.kunci();
+                    return;
+                }
+
                 this.mengumpulkan = false;
                 $.alert({
                     title: 'Pengumpulan Tertunda',
                     content: 'Koneksi ke server sempat terganggu. Jawaban Anda aman tersimpan. Silakan klik tombol Kumpulkan Ujian sekali lagi.',
                     type: 'orange'
                 });
-                this._timerHandle = setInterval(() => this.tickCountdown(), 1000);
+                this._lanjutkanTimer(otomatis);
             } catch (e) {
                 this.mengumpulkan = false;
                 $.alert({
@@ -763,7 +862,7 @@ function ujianKerjakan(cfg) {
                     content: 'Gagal menghubungi server. Periksa koneksi internet Anda lalu klik tombol Kumpulkan Ujian sekali lagi.',
                     type: 'red'
                 });
-                this._timerHandle = setInterval(() => this.tickCountdown(), 1000);
+                this._lanjutkanTimer(otomatis);
             }
         },
     };

@@ -7,7 +7,7 @@
         <i data-lucide="lock" class="w-14 h-14 text-rose-500 mx-auto"></i>
         <h1 class="text-lg font-bold text-slate-800 dark:text-slate-100">Ujian Terkunci</h1>
         <p class="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-            Ujian Anda terkunci karena keluar dari layar penuh atau berpindah tab.
+            {{ $alasan ?? 'Ujian Anda terkunci karena keluar dari layar penuh atau berpindah tab.' }}
             Hubungi guru/panitia ujian untuk membuka kembali. Jawaban yang sudah tersimpan tidak hilang.
         </p>
         <p class="text-xs text-slate-400">{{ $ujian->judul }}</p>

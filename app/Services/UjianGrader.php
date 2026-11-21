@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\DB;
  */
 class UjianGrader
 {
+    public function __construct(private ?ExamBrowserSelesai $examBrowser = null) {}
+
     /** @return array{is_benar: ?bool, skor: float} */
     public function scoreObjective(UjianSoal $soal, object $jawaban): array
     {
@@ -265,10 +267,10 @@ class UjianGrader
      */
     public function autoSubmitKarenaWaktuHabis(UjianAttempt $attempt): void
     {
-        DB::transaction(function () use ($attempt) {
+        $selesai = DB::transaction(function () use ($attempt) {
             $locked = UjianAttempt::where('uuid', $attempt->uuid)->lockForUpdate()->first();
             if (!$locked || $locked->status !== UjianAttempt::STATUS_IN_PROGRESS) {
-                return;
+                return null;
             }
             $locked->update([
                 'status'       => UjianAttempt::STATUS_SUBMITTED,
@@ -276,7 +278,14 @@ class UjianGrader
                 'auto_submit'  => true,
             ]);
             $this->finalisasiObjektif($locked->fresh());
+
+            return $locked;
         });
+
+        // Di luar transaksi: panggilan HTTP ke Exam Console tidak boleh menahan lock baris attempt.
+        if ($selesai !== null) {
+            ($this->examBrowser ??= app(ExamBrowserSelesai::class))->beritahu($selesai);
+        }
     }
 
     private function adaEsaiBelumDinilai($soalById, $jawabanList): bool

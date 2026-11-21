@@ -36,17 +36,21 @@ class SendFcmNotificationJob implements ShouldQueue
 
         foreach ($tokens as $row) {
             try {
-                $fcm->send($row->token, $this->payload);
+                if ($row->device_type === UserFcmToken::DEVICE_ANDROID_EXAM) {
+                    $fcm->sendExamAlert($row->token);
+                } else {
+                    $fcm->send($row->token, $this->payload);
+                }
             } catch (NotFound|InvalidArgument $e) {
                 // Token tidak terdaftar / kadaluarsa / format salah → hapus baris ini.
                 $row->delete();
                 Log::info('FCM token invalid dihapus', [
                     'user'  => $this->userUuid,
-                    'token' => substr($row->token, 0, 12).'…',
+                    'device_type' => $row->device_type,
                 ]);
             } catch (\Throwable $e) {
                 // Kegagalan lain (jaringan/kuota) → catat saja, jangan lempar.
-                Log::warning('FCM gagal kirim: '.$e->getMessage(), ['user' => $this->userUuid]);
+                Log::warning('FCM gagal kirim', ['user' => $this->userUuid, 'error' => $e::class]);
             }
         }
     }

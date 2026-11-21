@@ -1,0 +1,41 @@
+{
+    "name": "btive/exam-browser",
+    "description": "SDK verifikasi B'tive Exam Browser untuk aplikasi ujian (PHP / Laravel).",
+    "version": "0.1.0",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5",
+        "orchestra/testbench": "^10.0"
+    },
+    "suggest": {
+        "laravel/framework": "Untuk middleware `eb:L2`, klien introspeksi berbasis Http, dan cache terenkripsi."
+    },
+    "autoload": {
+        "psr-4": {
+            "Btive\\ExamBrowser\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Btive\\ExamBrowser\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Btive\\ExamBrowser\\Laravel\\ExamBrowserServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
+}

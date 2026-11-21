@@ -44,9 +44,12 @@ class UjianBackupController extends Controller
 
     public function restore(Request $request)
     {
+        // Audit 2026-11-17 C1: restore menulis ulang nilai & kunci jawaban → hanya admin/pengelola.
+        $this->authorize('restoreBackup', Ujian::class);
+
         $request->validate([
             'password' => 'required|string',
-            'backup_file' => 'required|file'
+            'backup_file' => 'required|file|max:51200|mimetypes:application/json,text/plain',
         ]);
 
         if (!Hash::check($request->password, auth()->user()->password)) {
@@ -58,6 +61,12 @@ class UjianBackupController extends Controller
 
         if (!$data || !isset($data['uuid'])) {
             return back()->with('error', 'File backup tidak valid atau rusak.');
+        }
+
+        // Ujian yang sudah ada hanya boleh ditimpa oleh yang berhak mengelolanya.
+        $existing = Ujian::withTrashed()->find($data['uuid']);
+        if ($existing) {
+            $this->authorize('manage', $existing);
         }
 
         \Illuminate\Database\Eloquent\Model::unguard();

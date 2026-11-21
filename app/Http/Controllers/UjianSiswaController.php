@@ -245,6 +245,15 @@ class UjianSiswaController extends Controller implements HasMiddleware
         // Titik paling rawan tembakan bersamaan — semua siswa satu kelas submit token
         // hampir bersamaan pas ujian dibuka. Aman diulang utuh: gagal konek terjadi
         // SEBELUM query manapun terkirim, jadi tak pernah ada tulis-separuh yg keulang.
+
+        // Audit 2026-11-17 L2: saat enforce, attempt (dan waktunya) hanya boleh dimulai setelah halaman
+        // gate ujian ini dibuka dari Exam Browser yang lolos verifikasi.
+        if ($ujian->wajibExamBrowser() && config('exam-browser.mode') === 'enforce'
+            && ! \App\Http\Middleware\WajibExamBrowser::gateBaruLolos($request, $ujian)) {
+            return redirect()->route('ujian.siswa.gate', $ujian)
+                ->with('error', 'Ujian ini harus dibuka dari aplikasi B\'tive Exam Browser.');
+        }
+
         return $this->retryOnDbBusy(function () use ($request, $ujian) {
             $siswa = $this->siswaAtauGagal($request);
             $ujianKelas = $ujian->getCachedKelas()->firstWhere('id_kelas', $siswa->id_kelas);
@@ -367,7 +376,9 @@ class UjianSiswaController extends Controller implements HasMiddleware
             if ($attempt->status !== UjianAttempt::STATUS_IN_PROGRESS) {
                 if ($request->wantsJson()) { return response()->json(['redirect' => route('ujian.siswa.hasil', [$ujian, $attempt])]); } return redirect()->route('ujian.siswa.hasil', [$ujian, $attempt]);
             }
-            if ($attempt->isExpired()) {
+            if ($attempt->lewatMasaTenggangSinkron()) {
+                // Dalam masa tenggang halaman tetap dirender: skrip langsung menyinkronkan antrean
+                // perangkat lalu mengumpulkan otomatis (review 2026-11-21 #1).
                 // JANGAN redirect ke gate() di sini — gate() akan redirect balik ke sini lagi
                 // selama attempt masih 'in_progress' & belum lewat sweep cron ujian:auto-submit,
                 // jadi finalisasi langsung di tempat supaya tidak loop tak berujung.
@@ -429,7 +440,7 @@ class UjianSiswaController extends Controller implements HasMiddleware
     {
         $this->pastikanMilikSiswa($request, $attempt);
 
-        if ($attempt->status === UjianAttempt::STATUS_IN_PROGRESS && !$attempt->isLocked() && $attempt->isExpired()) {
+        if ($attempt->status === UjianAttempt::STATUS_IN_PROGRESS && !$attempt->isLocked() && $attempt->lewatMasaTenggangSinkron()) {
             app(\App\Services\UjianGrader::class)->autoSubmitKarenaWaktuHabis($attempt);
             $attempt->refresh();
         }
@@ -448,7 +459,7 @@ class UjianSiswaController extends Controller implements HasMiddleware
             $this->pastikanMilikSiswa($request, $attempt);
             abort_if($attempt->isLocked(), 403, 'Ujian terkunci — hubungi guru/panitia untuk membuka kembali.');
             abort_unless($attempt->status === UjianAttempt::STATUS_IN_PROGRESS, 422, 'Ujian ini sudah dikumpulkan.');
-            abort_if($attempt->isExpired(), 422, 'Waktu ujian sudah habis.');
+            abort_if($attempt->lewatMasaTenggangSinkron(), 422, 'Waktu ujian sudah habis.');
 
             $data = $request->validate([
                 'id_soal'            => 'required|uuid',
@@ -488,7 +499,7 @@ class UjianSiswaController extends Controller implements HasMiddleware
             $this->pastikanMilikSiswa($request, $attempt);
             abort_if($attempt->isLocked(), 403, 'Ujian terkunci — hubungi guru/panitia untuk membuka kembali.');
             abort_unless($attempt->status === UjianAttempt::STATUS_IN_PROGRESS, 422, 'Ujian ini sudah dikumpulkan.');
-            abort_if($attempt->isExpired(), 422, 'Waktu ujian sudah habis.');
+            abort_if($attempt->lewatMasaTenggangSinkron(), 422, 'Waktu ujian sudah habis.');
 
             $validated = $request->validate([
                 'jawaban'                        => 'required|array|max:200',
@@ -596,12 +607,48 @@ class UjianSiswaController extends Controller implements HasMiddleware
                 }
             });
 
+            $finishToken = $this->beritahuExamBrowserSelesai($request);
+
             if ($request->wantsJson()) {
-                return response()->json(['redirect' => route('ujian.siswa.hasil', [$ujian, $attempt])]);
+                return response()->json(array_filter([
+                    'redirect' => route('ujian.siswa.hasil', [$ujian, $attempt]),
+                    // Halaman memanggil ExamBrowser.finish(token) → perangkat siswa langsung dibuka.
+                    'exam_browser_finish_token' => $finishToken,
+                ]));
             }
-            
+
             return redirect()->route('ujian.siswa.hasil', [$ujian, $attempt]);
         });
+    }
+
+    /**
+     * Jawaban final tersimpan → beri tahu Exam Console (API-09) supaya Exam Browser boleh keluar,
+     * dan kembalikan finish token untuk keluar seketika dari halaman. Gagal di sini TIDAK boleh
+     * menggagalkan pengumpulan (jawaban sudah tersimpan); siswa masih bisa keluar lewat kode pengawas.
+     */
+    private function beritahuExamBrowserSelesai(Request $request): ?string
+    {
+        $hasil = $request->attributes->get('exam_browser');
+        $sesi = $hasil instanceof \Btive\ExamBrowser\VerificationResult && $hasil->ok() ? $hasil->session : null;
+
+        if ($sesi === null) {
+            // Review 2026-11-21 #6: Console tidak terjangkau tetapi bukti offline sah → tetap beri finish
+            // token supaya tablet terbuka seketika. Console tidak dihubungi (sedang mati); perangkat yang
+            // mengakhiri sesi dengan target_finish tercatat & dapat dicocokkan pengawas.
+            $offline = $request->attributes->get(\App\Http\Middleware\WajibExamBrowser::ATRIBUT_OFFLINE);
+
+            return $offline instanceof \Btive\ExamBrowser\SessionInfo
+                ? \Btive\ExamBrowser\FinishToken::create($offline->sessionKey(), $offline->sessionId, time())
+                : null;
+        }
+
+        try {
+            app(\Btive\ExamBrowser\Laravel\ExamBrowserClient::class)->finish($sesi->sessionId);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Ujian: gagal memanggil finish Exam Console', ['error' => $e->getMessage()]);
+        }
+
+        return \Btive\ExamBrowser\FinishToken::create($sesi->sessionKey(), $sesi->sessionId, time());
     }
 
     public function hasil(Request $request, Ujian $ujian, UjianAttempt $attempt)
@@ -614,6 +661,8 @@ class UjianSiswaController extends Controller implements HasMiddleware
     private function pastikanMilikSiswa(Request $request, UjianAttempt $attempt): void
     {
         abort_unless($attempt->id_siswa === $request->user()->uuid, 403);
+        $ujian = $request->route('ujian');
+        abort_unless($ujian instanceof Ujian && $attempt->ujianKelas?->id_ujian === $ujian->uuid, 404);
     }
 }
 

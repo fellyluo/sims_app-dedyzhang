@@ -253,7 +253,7 @@ class ModeUjianLockdownTest extends TestCase
         $this->post(route('survei.sesi.mulai', $periode), ['kelas_sesi' => [$kelasId]])
             ->assertRedirect(route('dashboard'));
         $this->post(route('survei.tutup', $periode))->assertRedirect(route('dashboard'));
-        $this->postJson(route('survei.kios.verifikasi', $periode))->assertStatus(423)->assertJson(['mode_ujian' => true]);
+        $this->postJson(route('survei.token', $periode), ['token' => '000000'])->assertStatus(423)->assertJson(['mode_ujian' => true]);
         $this->assertSame(0, $periode->sesi()->count());
         $this->assertFalse((bool) $periode->fresh()->ditutup);
 
@@ -421,7 +421,7 @@ class ModeUjianLockdownTest extends TestCase
 
         Setting::set('nama_sekolah', 'Sekolah Tes');
         $this->assertSame('Sekolah Tes', Setting::get('nama_sekolah'));
-        $this->assertTrue(\Illuminate\Support\Facades\Cache::has('global_settings_rows'));
+        $this->assertTrue(\Illuminate\Support\Facades\Cache::has('test_settings_rows'));
 
         \App\Models\Langganan::create([
             'paket' => 'pro',

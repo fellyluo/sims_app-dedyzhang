@@ -56,6 +56,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission'   => \App\Http\Middleware\CheckPermission::class,
             'chatbot.user' => CanUseChatbot::class,
             'modul'        => EnsureModulAktif::class,
+            'exam.browser' => \App\Http\Middleware\WajibExamBrowser::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

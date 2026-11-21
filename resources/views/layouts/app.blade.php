@@ -2385,7 +2385,11 @@
             if (!window.AndroidFcm || typeof AndroidFcm.getToken !== 'function') return;
             var token = '';
             try { token = AndroidFcm.getToken() || ''; } catch (e) { return; }
-            if (token) window.registerFcmToken(token, 'android');
+            var deviceType = 'android';
+            if (typeof AndroidFcm.getDeviceType === 'function' && AndroidFcm.getDeviceType() === 'android_exam') {
+                deviceType = 'android_exam';
+            }
+            if (token) window.registerFcmToken(token, deviceType);
         }
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', run);

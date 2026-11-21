@@ -193,98 +193,22 @@ class SurveiPembelajaranTest extends TestCase
         $this->get($detail)->assertOk()->assertSee('Siap')->assertSee('Dimulai');
     }
 
-    public function test_seb_memvalidasi_klien_dan_membuka_jalur_keluar_setelah_jawaban_tersimpan(): void
+    public function test_periode_dengan_mode_perangkat_lama_tidak_membuka_form_atau_menyimpan_jawaban(): void
     {
-        $f = $this->fixture();
-        $periode = $this->periode();
-        $periode->update(['dibuat_oleh' => $f['admin']->uuid, 'wajib_token' => true]);
-        $target = $this->target($periode, $f);
-        $detail = route('survei.periode', $periode);
-        $mulai = route('survei.sesi.mulai', $periode);
-        $form = route('survei.form', $periode);
-        $kirim = route('survei.kirim-batch', $periode);
-        $kelas = ['kelas_sesi' => [$f['kelas']->uuid]];
-        $quitId = fake()->uuid();
-        $urlKeluar = route('survei.seb.keluar', ['kode' => $quitId]);
-        $browserKey = hash('sha256', 'test-browser-exam-key');
+        $fixture = $this->fixture();
+        $this->actingAs($fixture['siswa']->user);
 
-        $this->actingAs($this->user('admin_lain_seb', 'superadmin'))
-            ->post(route('survei.seb.wajib', $periode))->assertForbidden();
-        $this->actingAs($f['admin'])->post(route('survei.seb.wajib', $periode))->assertRedirect($detail);
-        $this->post($mulai, $kelas)->assertSessionHasErrors('wajib_seb');
-        config(['survei.seb_browser_exam_keys' => $browserKey, 'survei.seb_quit_id' => $quitId]);
-        $this->post($mulai, $kelas)->assertRedirect($detail);
+        foreach (['wajib_seb', 'wajib_kios'] as $mode) {
+            $periode = $this->periode();
+            $periode->update([$mode => true]);
+            $target = $this->target($periode, $fixture);
 
-        $this->actingAs($f['siswa']->user)->get($urlKeluar)->assertNotFound();
-        $this->post(route('survei.token', $periode), ['token' => $periode->sesiAktif()->token])->assertRedirect($form);
-        $verifikasi = route('survei.seb.verifikasi', $periode);
-        $urlForm = $this->get($form)->headers->get('Location');
-        $this->assertStringStartsWith($form.'?verifikasi=', $urlForm);
-        $this->get($urlForm)->assertOk()->assertSee('Gunakan Safe Exam Browser')->assertDontSee('Matematika');
-        $this->postJson($verifikasi, ['bukti_seb' => hash('sha256', $form.$browserKey)])->assertForbidden();
-        $this->get($urlForm, ['X-SafeExamBrowser-RequestHash' => hash('sha256', $urlForm.$browserKey)])
-            ->assertOk()->assertSee('Matematika');
-
-        $bukti = hash('sha256', $urlForm.$browserKey);
-        $this->postJson($verifikasi, ['bukti_seb' => $bukti])->assertOk()->assertJson(['form' => $urlForm]);
-        $tanda = $this->get($urlForm)->assertOk()->assertSee('Matematika')->viewData('tandaSesi');
-        $payload = ['jawaban' => [$target->uuid => array_fill(0, 10, 5)], 'tanda_sesi' => $tanda];
-        $this->postJson($kirim, $payload)->assertForbidden();
-        $this->postJson($kirim, ['tanda_sesi' => $tanda, 'bukti_seb' => $bukti])->assertUnprocessable();
-        $this->get($urlKeluar)->assertNotFound();
+            $this->get(route('survei.form', $periode))->assertForbidden();
+            $this->postJson(route('survei.kirim-batch', $periode), [
+                'jawaban' => [$target->uuid => array_fill(0, 10, 5)],
+            ])->assertForbidden()->assertJsonPath('message', 'Periode ini memakai mode perangkat lama. Hubungi pengelola survei.');
+        }
         $this->assertSame(0, Respons::count());
-        $this->postJson($kirim, $payload + ['bukti_seb' => $bukti])->assertOk()
-            ->assertJson(['tersimpan' => true, 'keluar' => $urlKeluar]);
-        $this->assertSame(1, Respons::count());
-        $this->get($urlKeluar)->assertRedirect(route('survei.index'));
-        $this->get($urlKeluar)->assertNotFound();
-    }
-
-    public function test_sims_kios_memerlukan_tanda_tangan_perangkat_untuk_buka_dan_kirim(): void
-    {
-        $f = $this->fixture();
-        $periode = $this->periode();
-        $periode->update(['dibuat_oleh' => $f['admin']->uuid, 'wajib_seb' => true]);
-        $target = $this->target($periode, $f);
-        $detail = route('survei.periode', $periode);
-        $form = route('survei.form', $periode);
-        $selesai = route('survei.kios.selesai', $periode);
-        $kelas = ['kelas_sesi' => [$f['kelas']->uuid]];
-        $cnf = file_exists('C:/xampp/apache/conf/openssl.cnf') ? ['config' => 'C:/xampp/apache/conf/openssl.cnf'] : [];
-        $private = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1', ...$cnf]);
-        $public = openssl_pkey_get_details($private)['key'];
-        config(['survei.kios_public_keys' => preg_replace('/-----[^-]+-----|\s+/', '', $public)]);
-
-        $this->actingAs($f['admin'])->post(route('survei.kios.wajib', $periode))->assertRedirect($detail);
-        $periode->refresh();
-        $this->assertTrue($periode->wajib_kios);
-        $this->assertFalse($periode->wajib_seb);
-        $this->post(route('survei.sesi.mulai', $periode), $kelas)->assertRedirect($detail);
-        $this->actingAs($f['siswa']->user)->get($selesai)->assertNotFound();
-        $this->post(route('survei.token', $periode), ['token' => $periode->sesiAktif()->token])->assertRedirect($form);
-        $gate = $this->get($form)->assertOk()->assertSee('Buka di SIMS Kios')->assertDontSee('Matematika');
-        $nonce = $gate->viewData('tantanganKios');
-        $tanda = $gate->viewData('tandaSesi');
-        $sign = function (string $action) use ($private, $periode, $nonce, $tanda): string {
-            $this->assertTrue(openssl_sign("sims-kios-v1|{$periode->uuid}|$action|$nonce|$tanda", $signature, $private, OPENSSL_ALGO_SHA256));
-
-            return base64_encode($signature);
-        };
-
-        $verifikasi = route('survei.kios.verifikasi', $periode);
-        $this->postJson($verifikasi, ['tanda_sesi' => $tanda, 'bukti_kios' => $sign('kirim')])->assertForbidden();
-        $this->postJson($verifikasi, ['tanda_sesi' => $tanda, 'bukti_kios' => $sign('buka')])->assertOk()->assertJson(['form' => $form]);
-        $this->get($form)->assertOk()->assertSee('id="survei-pengisian"', false);
-        $this->get($form)->assertOk()->assertDontSee('id="survei-pengisian"', false);
-        $kirim = route('survei.kirim-batch', $periode);
-        $jawaban = ['jawaban' => [$target->uuid => array_fill(0, 10, 5)], 'tanda_sesi' => $tanda];
-        $this->postJson($kirim, $jawaban + ['bukti_kios' => $sign('buka')])->assertForbidden();
-        $this->postJson($kirim, ['tanda_sesi' => $tanda, 'bukti_kios' => $sign('kirim')])->assertUnprocessable();
-        $this->get($selesai)->assertNotFound();
-        $this->postJson($kirim, $jawaban + ['bukti_kios' => $sign('kirim')])->assertOk()
-            ->assertJson(['tersimpan' => true, 'kios_selesai' => $selesai]);
-        $this->get($selesai)->assertOk();
-        $this->assertSame(1, Respons::count());
     }
 
     public function test_siswa_hanya_kelasnya_kirim_sekali_dan_tidak_bisa_setelah_tutup(): void
@@ -839,7 +763,6 @@ class SurveiPembelajaranTest extends TestCase
         $this->get($detail)->assertOk()->assertSee($token)->assertSee('Tampilkan token');
         $this->post(route('survei.tutup', $p))->assertForbidden();
         $this->get(route('survei.responden', $p))->assertForbidden();
-        $this->post(route('survei.seb.wajib', $p))->assertForbidden();
 
         $this->actingAs($f['siswa']->user)->post(route('survei.token', $p), ['token' => $token])
             ->assertRedirect(route('survei.form', $p));

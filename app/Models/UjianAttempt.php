@@ -18,6 +18,13 @@ class UjianAttempt extends Model
     public const STATUS_DINILAI = 'dinilai';
     public const STATUS_DIBATALKAN = 'dibatalkan';
 
+    /**
+     * Review 2026-11-21 #1: jawaban yang dikirim tepat saat/sesaat setelah deadline (antrean perangkat,
+     * jeda jaringan, selisih jam tablet) masih diterima selama masa tenggang ini. UI siswa sudah berhenti
+     * menerima perubahan di deadline; tenggang hanya untuk sinkronisasi antrean, bukan menambah waktu.
+     */
+    public const MASA_TENGGANG_SINKRON_DETIK = 45;
+
     protected $fillable = [
         'id_ujian_kelas', 'id_siswa', 'urutan_soal', 'urutan_opsi',
         'mulai_pada', 'batas_waktu_pada', 'selesai_pada',
@@ -76,6 +83,13 @@ class UjianAttempt extends Model
     public function isExpired(): bool
     {
         return $this->batas_waktu_pada && now()->gte($this->batas_waktu_pada);
+    }
+
+    /** Sudah lewat deadline + masa tenggang sinkron: jawaban tidak diterima lagi, boleh difinalisasi server. */
+    public function lewatMasaTenggangSinkron(): bool
+    {
+        return $this->batas_waktu_pada
+            && now()->gte($this->batas_waktu_pada->copy()->addSeconds(self::MASA_TENGGANG_SINKRON_DETIK));
     }
 
     public function statusLabel(): string

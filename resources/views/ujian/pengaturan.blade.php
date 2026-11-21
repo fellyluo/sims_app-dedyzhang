@@ -134,6 +134,32 @@
             </label>
         </div>
 
+        @if($bolehAturKelas)
+        <fieldset class="rounded-xl border border-slate-200 dark:border-slate-600 p-4 space-y-3" x-data="{ level: {{ Js::from((string) old('exam_browser_level', $ujian->exam_browser_level ?? '')) }} }">
+            <legend class="px-1 text-sm font-semibold">B'tive Exam Browser</legend>
+            <p class="text-xs text-slate-500 dark:text-slate-400 m-0">Wajibkan siswa mengerjakan dari aplikasi B'tive Exam Browser yang mengunci perangkat. Siswa yang membuka dari browser biasa akan diarahkan membuka aplikasi.</p>
+            <div>
+                <label for="exam_browser_level" class="block text-sm font-medium mb-1">Syarat perangkat</label>
+                <select id="exam_browser_level" name="exam_browser_level" x-model="level" class="w-full rounded-xl border-slate-200 dark:border-slate-600 dark:bg-slate-700 text-sm">
+                    <option value="">Tidak wajib (perilaku sekarang)</option>
+                    <option value="1">Wajib Exam Browser — L1 (aplikasi terkunci)</option>
+                    <option value="2">Wajib Exam Browser — L2 (aplikasi + verifikasi perangkat)</option>
+                    <option value="3">Wajib Exam Browser — L3 (perangkat terkelola sekolah)</option>
+                </select>
+                @error('exam_browser_level') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+            </div>
+            <div x-show="level !== ''" x-cloak>
+                <label for="exam_browser_session_id" class="block text-sm font-medium mb-1">ID sesi ujian di Exam Console <span class="font-normal text-slate-400">(wajib jika Exam Browser aktif)</span></label>
+                <input id="exam_browser_session_id" name="exam_browser_session_id" type="text" value="{{ old('exam_browser_session_id', $ujian->exam_browser_session_id) }}" class="w-full rounded-xl border-slate-200 dark:border-slate-600 dark:bg-slate-700 text-sm font-mono" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-0">Salin ID sesi Console yang start URL-nya mengarah ke halaman masuk ujian ini. Hanya kode join sesi tersebut yang diterima saat mode enforce.</p>
+                @error('exam_browser_session_id') <p class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+            </div>
+            @if (config('exam-browser.mode') !== 'enforce')
+                <p class="text-xs text-amber-700 dark:text-amber-400 m-0">Server masih mode <strong>uji coba (report)</strong>: pelanggaran hanya dicatat, siswa belum ditolak.</p>
+            @endif
+        </fieldset>
+        @endif
+
         <div class="flex gap-3 pt-2">
             <button type="submit" class="btn-primary px-6 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2"><i data-lucide="save" class="w-4 h-4"></i> Simpan Perubahan</button>
             <a href="{{ route('ujian.show', $ujian) }}" class="px-6 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition">Batal</a>

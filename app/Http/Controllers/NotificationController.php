@@ -233,8 +233,9 @@ class NotificationController extends Controller
         }
 
         $data = $request->validate([
-            'token' => 'required|string',
-            'device_type' => 'nullable|string',
+            'token' => 'required|string|max:4096',
+            // Review 2026-11-21 #11: batasi panjang; nilai di luar daftar dikenal tetap 'android' biasa.
+            'device_type' => 'nullable|string|max:20',
         ]);
 
         // Upsert per token (token unik global): bila perangkat yang sama login

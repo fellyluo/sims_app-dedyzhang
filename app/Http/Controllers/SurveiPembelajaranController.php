@@ -10,11 +10,9 @@ use App\Models\Walikelas;
 use App\Support\Audit;
 use App\Support\SchoolLetterhead;
 use App\Survei\AnalisisGuru;
-use App\Survei\Kios;
 use App\Survei\Periode;
 use App\Survei\Pertanyaan;
 use App\Survei\Respons;
-use App\Survei\SafeExamBrowser;
 use App\Survei\Sesi;
 use App\Survei\Target;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -30,8 +28,6 @@ use Illuminate\Validation\ValidationException;
 
 class SurveiPembelajaranController extends Controller
 {
-    public function __construct(private SafeExamBrowser $seb, private Kios $kios) {}
-
     private function admin(): void
     {
         abort_unless(auth()->user()->isAdmin(), 403);
@@ -438,12 +434,7 @@ class SurveiPembelajaranController extends Controller
         DB::transaction(function () use ($periode, $values): void {
             $locked = Periode::whereKey($periode->uuid)->lockForUpdate()->firstOrFail();
             abort_unless($locked->terbuka(), 403, 'Sesi hanya dapat dimulai dalam jadwal periode.');
-            if ($locked->wajib_seb && ! $this->seb->siap()) {
-                throw ValidationException::withMessages(['wajib_seb' => 'Siapkan konfigurasi Safe Exam Browser sebelum memulai sesi.']);
-            }
-            if ($locked->wajib_kios && ! $this->kios->siap()) {
-                throw ValidationException::withMessages(['wajib_kios' => 'Daftarkan perangkat SIMS Kios sebelum memulai sesi.']);
-            }
+            $this->pastikanSurveiTanpaModeLama($locked);
             if ($locked->sesiAktif()) {
                 throw ValidationException::withMessages(['kelas_sesi' => 'Tekan Siap pada sesi yang sedang berjalan terlebih dahulu.']);
             }
@@ -459,39 +450,6 @@ class SurveiPembelajaranController extends Controller
         });
 
         return redirect()->route('survei.periode', $periode)->with('success', 'Sesi dimulai. Bagikan token kepada kelas yang dicentang. Tekan Siap bila kelas selesai.');
-    }
-
-    public function wajibkanSeb(Request $request, Periode $periode)
-    {
-        abort_unless($periode->bolehMelihatIdentitas($request->user()), 403);
-
-        DB::transaction(function () use ($periode): void {
-            $locked = Periode::whereKey($periode->uuid)->lockForUpdate()->firstOrFail();
-            abort_if($locked->berakhir() || $locked->sesiAktif(), 403, 'Akhiri sesi aktif sebelum mewajibkan Safe Exam Browser.');
-            abort_if($locked->wajib_kios, 403, 'Periode ini menggunakan SIMS Kios.');
-            if (! $locked->wajib_seb) {
-                $locked->update(['wajib_seb' => true]);
-                Audit::log('survei_seb_diwajibkan', $locked);
-            }
-        });
-
-        return redirect()->route('survei.periode', $periode)->with('success', 'Safe Exam Browser diwajibkan untuk periode ini.');
-    }
-
-    public function wajibkanKios(Request $request, Periode $periode)
-    {
-        abort_unless($periode->bolehMelihatIdentitas($request->user()), 403);
-
-        DB::transaction(function () use ($periode): void {
-            $locked = Periode::whereKey($periode->uuid)->lockForUpdate()->firstOrFail();
-            abort_if($locked->berakhir() || $locked->sesiAktif(), 403, 'Akhiri sesi aktif sebelum mengubah mode perangkat.');
-            if (! $locked->wajib_kios) {
-                $locked->update(['wajib_kios' => true, 'wajib_seb' => false, 'wajib_token' => true]);
-                Audit::log('survei_kios_diwajibkan', $locked);
-            }
-        });
-
-        return redirect()->route('survei.periode', $periode)->with('success', 'SIMS Kios diwajibkan untuk periode ini.');
     }
 
     public function gantiToken(Request $request, Periode $periode, string $sesiId)
@@ -593,6 +551,7 @@ class SurveiPembelajaranController extends Controller
         $status = $this->targetDenganStatus($periode, $siswa);
         $targets = $status->where('kelas_id', $siswa->id_kelas);
         abort_unless($targets->isNotEmpty(), 403, 'Survei tidak tersedia untuk kelasmu.');
+        $this->pastikanSurveiTanpaModeLama($periode);
 
         if ($this->periodeSudahDiisi($status)) {
             return $this->jawabanTerkirim($request, $periode);
@@ -613,31 +572,6 @@ class SurveiPembelajaranController extends Controller
             }
         }
 
-        $tantanganKios = null;
-        if ($periode->wajib_kios) {
-            $tantanganKios = $this->kios->tantangan($request, $periode);
-            $kiosSiap = $this->kios->siap();
-            if (! $kiosSiap || $request->session()->pull($this->kios->kunciAkses($request, $periode)) !== $tandaSesi) {
-                return response()->view('survei.kios', compact('periode', 'tantanganKios', 'tandaSesi', 'kiosSiap'))
-                    ->header('Cache-Control', 'private, no-store');
-            }
-        }
-
-        if ($periode->wajib_seb) {
-            $sebSiap = $this->seb->siap();
-            if ($sebSiap) {
-                $url = $this->seb->urlForm($request, $periode);
-                if ($request->fullUrl() !== $url) {
-                    return redirect()->to($url)->header('Cache-Control', 'private, no-store');
-                }
-            }
-
-            if (! $this->aksesSeb($request, $periode)) {
-                return response()->view('survei.seb', compact('periode', 'sebSiap'))
-                    ->header('Cache-Control', 'private, no-store');
-            }
-        }
-
         $targets = $targets->where('sudah_diisi', false)->values();
 
         return response()->view('survei.form', [
@@ -645,7 +579,6 @@ class SurveiPembelajaranController extends Controller
             'targets' => $targets,
             'skala' => Pertanyaan::SKALA,
             'tandaSesi' => $tandaSesi,
-            'tantanganKios' => $tantanganKios,
             'isKiosk' => true,
         ])->header('Cache-Control', 'private, no-store');
     }
@@ -676,6 +609,7 @@ class SurveiPembelajaranController extends Controller
         $status = $this->targetDenganStatus($periode, $siswa);
         $targets = $status->where('kelas_id', $siswa->id_kelas);
         abort_unless($targets->isNotEmpty(), 403, 'Survei tidak tersedia untuk kelasmu.');
+        $this->pastikanSurveiTanpaModeLama($periode);
 
         if ($this->periodeSudahDiisi($status)) {
             return;
@@ -684,8 +618,6 @@ class SurveiPembelajaranController extends Controller
         $pending = $targets->where('sudah_diisi', false);
         abort_unless($periode->terbuka(), 403, 'Survei belum dibuka atau sudah berakhir.');
         $this->pastikanSesiSiswa($request, $periode, $siswa->id_kelas);
-        abort_if($periode->wajib_seb && ! $this->aksesSeb($request, $periode), 403, 'Pengiriman memerlukan Safe Exam Browser.');
-        $this->pastikanKios($request, $periode);
         $opsiKarakter = $periode->pilihanKarakter();
 
         $rules = [
@@ -767,6 +699,11 @@ class SurveiPembelajaranController extends Controller
         Audit::log('survei_jawaban_dikirim', $periode);
     }
 
+    private function pastikanSurveiTanpaModeLama(Periode $periode): void
+    {
+        abort_if($periode->wajib_seb || $periode->wajib_kios, 403, 'Periode ini memakai mode perangkat lama. Hubungi pengelola survei.');
+    }
+
     private function pastikanSesiSiswa(Request $request, Periode $periode, string $kelasId): void
     {
         if ($periode->wajib_token) {
@@ -777,92 +714,16 @@ class SurveiPembelajaranController extends Controller
         }
     }
 
-    private function aksesSeb(Request $request, Periode $periode): bool
-    {
-        if ($this->seb->verifikasi($request->header('X-SafeExamBrowser-RequestHash'), $request->fullUrl())) {
-            return true;
-        }
-
-        $bukti = $request->isMethod('POST')
-            ? $request->input('bukti_seb')
-            : $request->session()->get($this->seb->kunciAkses($request, $periode));
-
-        return is_string($bukti) && $this->seb->verifikasi($bukti, $this->seb->urlForm($request, $periode));
-    }
-
-    public function verifikasiKios(Request $request, Periode $periode)
-    {
-        $siswa = $this->siswa();
-        abort_unless($periode->wajib_kios && $periode->wajib_token, 403);
-        $this->pastikanSesiSiswa($request, $periode, $siswa->id_kelas);
-        $tanda = $request->input('tanda_sesi');
-        abort_unless($this->kios->verifikasi($request, $periode, 'buka', $tanda), 403);
-
-        $request->session()->put($this->kios->kunciAkses($request, $periode), $tanda);
-
-        return response()->json(['form' => route('survei.form', $periode)])->header('Cache-Control', 'private, no-store');
-    }
-
-    private function pastikanKios(Request $request, Periode $periode): void
-    {
-        if ($periode->wajib_kios) {
-            $tanda = $request->input('tanda_sesi');
-            abort_unless(is_string($tanda) && $this->kios->verifikasi($request, $periode, 'kirim', $tanda), 403,
-                'Pengiriman memerlukan perangkat yang terkunci oleh SIMS Kios.');
-        }
-    }
-
-    public function verifikasiSeb(Request $request, Periode $periode)
-    {
-        $siswa = $this->siswa();
-        abort_unless($periode->wajib_seb && $periode->terbuka()
-            && $periode->sesiAktif()?->akses($request, $siswa->id_kelas), 403);
-
-        $bukti = $request->input('bukti_seb');
-        $url = $this->seb->urlForm($request, $periode);
-        abort_unless(is_string($bukti) && $this->seb->verifikasi($bukti, $url), 403);
-
-        $request->session()->put($this->seb->kunciAkses($request, $periode), $bukti);
-
-        return response()->json(['form' => $url])->header('Cache-Control', 'private, no-store');
-    }
-
-    public function keluarSeb(Request $request, string $kode)
-    {
-        $selesaiOleh = $request->session()->get('survei.seb.selesai');
-        abort_unless($this->seb->siap() && hash_equals((string) config('survei.seb_quit_id'), $kode)
-            && $selesaiOleh === $request->user()->getKey(), 404);
-        $request->session()->forget('survei.seb.selesai');
-
-        return redirect()->route('survei.index')->with('success', 'Jawaban sudah dikirim dan bersifat rahasia.')
-            ->header('Cache-Control', 'private, no-store');
-    }
-
     private function jawabanTerkirim(Request $request, Periode $periode): JsonResponse|RedirectResponse
     {
         $request->session()->flash('success', 'Jawaban sudah dikirim dan bersifat rahasia.');
 
-        $keluar = null;
-        if ($periode->wajib_seb && $this->aksesSeb($request, $periode)) {
-            $request->session()->put('survei.seb.selesai', $request->user()->getKey());
-            $keluar = $this->seb->urlKeluar();
-        }
-
-        $kiosSelesai = $periode->wajib_kios ? route('survei.kios.selesai', $periode) : null;
         if ($request->expectsJson()) {
-            return response()->json(array_filter(['tersimpan' => true, 'keluar' => $keluar, 'kios_selesai' => $kiosSelesai]))
+            return response()->json(['tersimpan' => true])
                 ->header('Cache-Control', 'private, no-store');
         }
 
         return redirect()->route('survei.index')->header('Cache-Control', 'private, no-store');
-    }
-
-    public function selesaiKios(Request $request, Periode $periode)
-    {
-        $siswa = $this->siswa();
-        abort_unless($periode->wajib_kios && $this->periodeSudahDiisi($this->targetDenganStatus($periode, $siswa)), 404);
-
-        return response('Jawaban tersimpan.')->header('Cache-Control', 'private, no-store');
     }
 
     public function kirim(Request $request, Target $target)

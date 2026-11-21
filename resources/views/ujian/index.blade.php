@@ -33,10 +33,12 @@
                 </a>
                 @endcan
 
+                @can('restoreBackup', \App\Models\Ujian::class)
                 <button type="button" @click="openRestore = true" class="btn-secondary px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-sm">
                     <i data-lucide="upload-cloud" class="w-4 h-4"></i>
                     <span>Restore Backup</span>
                 </button>
+                @endcan
 
                 <form method="POST" action="{{ route('ujian.mode-ujian.toggle') }}" class="m-0">
                     @csrf
@@ -48,6 +50,7 @@
             </div>
 
             {{-- Modal Restore Backup --}}
+            @can('restoreBackup', \App\Models\Ujian::class)
             <div x-show="openRestore" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" style="display: none;" x-cloak>
                 <form method="POST" action="{{ route('ujian.restore') }}" enctype="multipart/form-data" class="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-xl" @click.outside="openRestore = false">
                     @csrf
@@ -69,6 +72,7 @@
                     </div>
                 </form>
             </div>
+            @endcan
         </div>
 
         {{-- Grid Kartu Paket Ujian --}}

@@ -8,6 +8,7 @@
     "require": {
         "php": "^8.2",
         "barryvdh/laravel-dompdf": "^3.1",
+        "btive/exam-browser": "^0.1",
         "diglactic/laravel-breadcrumbs": "^10.1",
         "intervention/image": "^3.0",
         "kreait/firebase-php": "^7.0",
@@ -97,6 +98,11 @@
     "minimum-stability": "stable",
     "prefer-stable": true,
     "repositories": [
+        {
+            "name": "btive-exam-browser",
+            "type": "path",
+            "url": "packages/btive-exam-browser"
+        },
         {
             "name": "ludensa",
             "type": "path",

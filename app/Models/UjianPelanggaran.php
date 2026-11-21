@@ -34,6 +34,7 @@ class UjianPelanggaran extends Model
             'direset_admin'     => 'Direset Ulang Admin',
             'dibuka_kembali_admin' => 'Dibuka Kembali Admin',
             'reset_oleh_pengawas' => 'Dibuka Kunci Pengawas Ruangan',
+            'eb_perangkat_lain' => 'Exam Browser dari Perangkat Lain',
             default             => $this->tipe,
         };
     }

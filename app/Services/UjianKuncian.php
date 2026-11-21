@@ -19,7 +19,9 @@ class UjianKuncian
     public function bukaKunci(UjianAttempt $attempt, string $tipeLog = 'reset_oleh_guru'): void
     {
         DB::transaction(function () use ($attempt, $tipeLog) {
-            $attempt->update(['dikunci' => false]);
+            // Audit M1: membuka kunci = izin pengawas untuk melanjutkan, termasuk dari perangkat
+            // Exam Browser lain → lepas ikatan sesi; request terverifikasi berikutnya mengikat ulang.
+            $attempt->forceFill(['dikunci' => false, 'eb_client_session_id' => null])->save();
             UjianPelanggaran::create(['id_attempt' => $attempt->uuid, 'id_siswa' => $attempt->id_siswa, 'tipe' => $tipeLog]);
         });
     }

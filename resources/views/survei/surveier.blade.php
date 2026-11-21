@@ -76,7 +76,6 @@
                     $sesi = $periode->sesi->first();
                     $namaKelas = $periode->targets->unique('kelas_id')->mapWithKeys(fn ($target) => [$target->kelas_id => $target->kelas_nama]);
                     $kelasBerjalan = $sesi ? $namaKelas->only($sesi->kelas_ids ?? [])->filter()->values() : collect();
-                    $mode = $periode->wajib_kios ? 'SIMS Kios' : ($periode->wajib_seb ? 'Safe Exam Browser' : 'Token kelas');
                 @endphp
                 <article class="card survei-papan-periode">
                     <div class="survei-papan-baris">
@@ -90,7 +89,7 @@
                     </div>
                     <div class="survei-papan-meta">
                         <span class="survei-papan-chip">{{ $namaKelas->count() }} kelas</span>
-                        <span class="survei-papan-chip">{{ $mode }}</span>
+                        <span class="survei-papan-chip">Token kelas</span>
                         @unless($sesi)
                             <span class="survei-papan-chip">Belum ada sesi</span>
                         @endunless

@@ -186,6 +186,41 @@ class FcmTest extends TestCase
 
     // ─────────────────────────── SendFcmNotificationJob ───────────────────────────
 
+    public function test_job_mengirim_sinyal_generik_khusus_ke_exam_browser(): void
+    {
+        $user = $this->makeUser('guru', 'fcm_exam_browser');
+        $this->actingAs($user)->postJson('/notifications/fcm-token', [
+            'token' => 'tablet-ujian', 'device_type' => UserFcmToken::DEVICE_ANDROID_EXAM,
+        ])->assertOk();
+        UserFcmToken::create(['user_uuid' => $user->uuid, 'token' => 'ponsel-pribadi', 'device_type' => 'android']);
+
+        $payload = ['title' => 'Pemberitahuan SIMS', 'message' => 'Isi untuk pengguna', 'url' => '/dashboard'];
+        $this->mock(FcmService::class, function ($mock) use ($payload) {
+            $mock->shouldReceive('enabled')->andReturn(true);
+            $mock->shouldReceive('sendExamAlert')->once()->with('tablet-ujian');
+            $mock->shouldReceive('send')->once()->with('ponsel-pribadi', $payload);
+        });
+
+        (new SendFcmNotificationJob($user->uuid, $payload))->handle(app(FcmService::class));
+    }
+
+    public function test_pesan_exam_browser_data_only_tanpa_teks_dan_url_pribadi(): void
+    {
+        $messaging = \Mockery::mock(\Kreait\Firebase\Contract\Messaging::class);
+        $messaging->shouldReceive('send')->once()->with(\Mockery::on(function ($message) {
+            $data = $message->jsonSerialize();
+
+            return $data['token'] === 'tablet-ujian'
+                && $data['data'] === ['type' => 'sims_exam_notice']
+                && ! isset($data['notification'])
+                && ! isset($data['android']['notification']);
+        }))->andReturn([]);
+
+        $fcm = app(FcmService::class);
+        (new \ReflectionProperty(FcmService::class, 'messaging'))->setValue($fcm, $messaging);
+        $fcm->sendExamAlert('tablet-ujian');
+    }
+
     public function test_job_selesai_tanpa_error_saat_fcm_disabled(): void
     {
         $user = $this->makeUser('guru', 'fcm_job_disabled');
@@ -276,5 +311,17 @@ class FcmTest extends TestCase
         $this->assertSame(['tok-invalid', 'tok-valid'], $sentTokens); // kedua token tetap dicoba
         $this->assertDatabaseMissing('user_fcm_tokens', ['token' => 'tok-invalid']);
         $this->assertDatabaseHas('user_fcm_tokens', ['token' => 'tok-valid']);
+    }
+
+    public function test_exam_browser_melepas_token_lewat_post_method_spoofing_saat_ujian_berakhir(): void
+    {
+        // Review 2026-11-21 #11: Android mengirim POST + _method=DELETE (HttpURLConnection tidak mendukung body DELETE).
+        $user = $this->makeUser('siswa', 'fcm_tablet_bersama');
+        UserFcmToken::create(['user_uuid' => $user->uuid, 'token' => 'tablet-bersama', 'device_type' => UserFcmToken::DEVICE_ANDROID_EXAM]);
+
+        $this->actingAs($user)->post('/notifications/fcm-token', ['_method' => 'DELETE', 'token' => 'tablet-bersama'], ['Accept' => 'application/json'])
+            ->assertOk();
+
+        $this->assertDatabaseMissing('user_fcm_tokens', ['token' => 'tablet-bersama']);
     }
 }

@@ -17,6 +17,7 @@ class Ujian extends Model
     protected $fillable = [
         'id_pelajaran', 'id_materi', 'id_ujian_paket', 'created_by', 'judul', 'instruksi', 'jenis',
         'target_nilai', 'mode_skor', 'durasi_menit', 'acak_soal', 'acak_opsi', 'tampilkan_pembahasan', 'status',
+        'exam_browser_level', 'exam_browser_session_id',
     ];
 
     protected function casts(): array
@@ -26,6 +27,7 @@ class Ujian extends Model
             'acak_soal'             => 'boolean',
             'acak_opsi'             => 'boolean',
             'tampilkan_pembahasan'  => 'boolean',
+            'exam_browser_level'    => 'integer',
         ];
     }
 
@@ -118,6 +120,14 @@ class Ujian extends Model
     public function wajibScanQr(): bool
     {
         return (bool) ($this->paket?->wajib_scan_qr ?? false);
+    }
+
+    /**
+     * Wajib dikerjakan dari B'tive Exam Browser? (docs/exam-browser — NULL = tidak, perilaku lama.)
+     */
+    public function wajibExamBrowser(): bool
+    {
+        return $this->exam_browser_level !== null && $this->exam_browser_level >= 1;
     }
 
     /** Baris jadwal (hari×jam) milik ujian ini — lihat UjianJadwalSync utk cara dipakai. */

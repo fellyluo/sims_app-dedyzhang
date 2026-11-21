@@ -224,7 +224,6 @@
         line-height: 1.7;
         white-space: pre-wrap;
         word-break: break-word;
-        white-space: normal;
     }
 
     /* ── AI Console — clean white, match SIMS theme ── */
@@ -1914,11 +1913,11 @@
                     </div>
                     <div x-show="materialError && materialError.tool === 'quiz'" x-cloak
                          class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-[11px] leading-relaxed text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-100">
-                        <p class="font-semibold" x-text="materialError.message"></p>
-                        <p class="mt-1 opacity-90" x-show="materialError.hint" x-text="materialError.hint"></p>
+                        <p class="font-semibold" x-text="materialError?.message"></p>
+                        <p class="mt-1 opacity-90" x-show="materialError?.hint" x-text="materialError?.hint"></p>
                         <div class="mt-2 flex flex-wrap gap-2">
                             <button type="button" class="ai-btn ai-btn--solid min-h-[36px] text-[11px]"
-                                    x-show="materialError.suggest_camera"
+                                    x-show="materialError?.suggest_camera"
                                     @click="switchToCameraFromMaterialError()">
                                 <i data-lucide="camera" class="w-3.5 h-3.5"></i> Pakai Foto buku
                             </button>
@@ -2593,11 +2592,11 @@
                     </div>
                     <div x-show="materialError && materialError.tool === 'learning'" x-cloak
                          class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-[11px] leading-relaxed text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-100">
-                        <p class="font-semibold" x-text="materialError.message"></p>
-                        <p class="mt-1 opacity-90" x-show="materialError.hint" x-text="materialError.hint"></p>
+                        <p class="font-semibold" x-text="materialError?.message"></p>
+                        <p class="mt-1 opacity-90" x-show="materialError?.hint" x-text="materialError?.hint"></p>
                         <div class="mt-2 flex flex-wrap gap-2">
                             <button type="button" class="ai-btn ai-btn--solid min-h-[36px] text-[11px]"
-                                    x-show="materialError.suggest_camera"
+                                    x-show="materialError?.suggest_camera"
                                     @click="switchToCameraFromMaterialError()">
                                 <i data-lucide="camera" class="w-3.5 h-3.5"></i> Pakai Foto buku
                             </button>
@@ -2922,7 +2921,7 @@
 
                     <div x-show="error && !loading && !materialProcessing" x-cloak class="rounded-xl bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 ring-1 ring-rose-200 dark:ring-rose-800 px-4 py-3 text-sm space-y-2">
                         <p x-text="error"></p>
-                        <p class="text-[12px] opacity-90" x-show="materialError && materialError.hint" x-text="materialError.hint"></p>
+                        <p class="text-[12px] opacity-90" x-show="materialError?.hint" x-text="materialError?.hint"></p>
                         <button type="button" class="ai-btn ai-btn--solid min-h-[36px] text-xs"
                                 x-show="materialError && materialError.suggest_camera"
                                 @click="switchToCameraFromMaterialError()">

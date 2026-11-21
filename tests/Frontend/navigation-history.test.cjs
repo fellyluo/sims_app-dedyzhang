@@ -10,17 +10,17 @@ function boot(){
  Object.assign(state,{navRegistry:Object.fromEntries(Array.from({length:14},(_,i)=>['menu'+i,{route:'menu'+i,label:'Menu '+i,url:'/menu/'+i,patterns:['menu'+i,'menu'+i+'.*']}])),navPinnedRoutes:['menu0'],dockFavoriteRoutes:[],navDockRecent:[],currentRoute:'menu0',$nextTick:fn=>fn()});
  return {state,data,messages};
 }
-test('history displays at most ten unique menus with newest first',()=>{
+test('history displays at most five unique menus with newest first',()=>{
  const {state}=boot();
  for(let i=0;i<14;i++)state.pushNavRecent('menu'+i);
- assert.equal(state.dockItems().length,10);assert.equal(state.dockItems()[0].route,'menu13');
+ assert.equal(state.dockItems().length,5);assert.equal(state.dockItems()[0].route,'menu13');
  state.pushNavRecent('menu7');assert.equal(state.dockItems()[0].route,'menu7');
- assert.equal(new Set(state.dockItems().map(i=>i.route)).size,10);
+ assert.equal(new Set(state.dockItems().map(i=>i.route)).size,5);
 });
 test('favourites stay visible before history and can be removed',()=>{
  const {state}=boot();state.pushNavRecent('menu0');state.toggleNavFavorite('menu0');
  for(let i=1;i<14;i++)state.pushNavRecent('menu'+i);
- assert.equal(state.dockItems().length,10);assert.equal(state.dockItems()[0].route,'menu0');
+ assert.equal(state.dockItems().length,5);assert.equal(state.dockItems()[0].route,'menu0');
  state.toggleNavFavorite('menu0');assert.equal(state.dockItems()[0].route,'menu13');
 });
 test('invalid or inaccessible routes are ignored and favourites are capped',()=>{

@@ -18,7 +18,7 @@ abstract class TestCase extends BaseTestCase
     public function createApplication()
     {
         $app = parent::createApplication();
-        $app['config']->set('database.connections.sqlite.database', database_path('testing.sqlite'));
+        $app['config']->set('database.connections.sqlite.database', getenv('SIMS_TEST_DATABASE') ?: database_path('testing.sqlite'));
         $app['config']->set('cache.default', 'array');
 
         return $app;

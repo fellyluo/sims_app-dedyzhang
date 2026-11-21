@@ -17,6 +17,12 @@ Baca `PRD.md` dan seluruh isi folder `features/` sebelum mengerjakan task apa pu
 
 Task terkait kuis interaktif / Arena Belajar: prompt implementasi Fase 1 ada di `PROMPT-ARENA-BELAJAR.md`. Jangan lompat fase tanpa approval FL untuk task yang menyentuh migration, auth/policy, atau alur nilai.
 
+## WebView Ujian SIMS
+
+- Sebelum membuat atau meninjau WebView Exam Browser Android, baca skill `android-webview-app-builder` beserta `references/default-wrapper-kit.md`, `references/push-fcm-laravel.md`, dan `references/android-standards.md`. Untuk WebView Apple, gunakan `apple-webview-pwa-builder`.
+- Verifikasi push SIMS dari ujung ke ujung di perangkat. Untuk Android, cek izin dan channel notifikasi, registrasi token setelah login melalui `AndroidFcm` dan `registerFcmToken`, pengiriman saat aplikasi terbuka dan di latar, serta tujuan saat notifikasi diketuk. Catat bukti uji perangkat sebelum menyatakan notifikasi berfungsi.
+- Saat ujian dikunci, gunakan pesan pengawas di dalam aplikasi dan uji pesan tersebut dengan Lock Task aktif.
+
 ## Modul lain: Piket Guru & Substitusi Kelas
 
 PRD + task breakdown di [`docs/piket-guru/PRD.md`](docs/piket-guru/PRD.md) + `docs/piket-guru/features/01-*.md` s.d. `05-*.md`; status terakhir di [`docs/piket-guru/PROGRESS.md`](docs/piket-guru/PROGRESS.md). **Fase 1–4 selesai** (jadwal rotasi, guru tidak hadir, penugasan pengganti, distribusi tugas kelas). Fase 5 (dashboard/rekap kepala sekolah) diimplementasi tetapi **dihapus dari navigasi** — ringkasan operasional ada di dashboard utama. Jangan mulai task migration/auth baru di modul ini tanpa approval FL.

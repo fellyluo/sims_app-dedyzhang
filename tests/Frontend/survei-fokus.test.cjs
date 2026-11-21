@@ -59,3 +59,11 @@ test('tombol mulai memakai mode fokus tanpa layar penuh saat layar penuh gagal',
     assert.match(script, /const layarPenuh = modeFokusAktif\(\) \|\| await mintaLayarPenuh\(\);\s*start\.disabled = false;/);
     assert.match(script, /if \(!layarPenuh\) tanpaLayarPenuh = true;/);
 });
+
+test('setiap atribut data-* yang dicari skrip memang ada di formulir survei', () => {
+    const form = fs.readFileSync('resources/views/survei/form.blade.php', 'utf8');
+    const dicari = [...script.matchAll(/closest\('\[(data-[a-z-]+)\]'\)/g)].map((m) => m[1]);
+    assert.ok(dicari.length > 0);
+    for (const attr of dicari) assert.match(form, new RegExp(attr + '='), `form.blade.php tidak punya ${attr}`);
+    assert.doesNotMatch(script, /pakaiSeb|pakaiKios|SafeExamBrowser|simsKios/);
+});
