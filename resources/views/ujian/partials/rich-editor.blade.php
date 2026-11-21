@@ -81,6 +81,132 @@
         }, 100);
     }
 
+    /**
+     * Membersihkan konten saat copy-paste dari Word, PDF, atau dokumen eksternal:
+     * - Membuang inline font-family & font-size agar otomatis mewarisi font default aplikasi
+     * - Menghapus tab stops, margin-left besar, dan text-indent Word yang bikin tab lari
+     * - Mengubah tab literal (\t) dan run &nbsp; ganda menjadi spasi normal tunggal
+     * - Membuang tag <font>, komentar MSO, namespace tags (<o:p>), dan unwrap span polos
+     */
+    function cleanPastedHtml(rawHtml) {
+        if (!rawHtml || typeof rawHtml !== 'string') return rawHtml;
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(rawHtml, 'text/html');
+
+            const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ALL, null, false);
+            const toRemove = [];
+            let node;
+            while ((node = walker.nextNode())) {
+                if (node.nodeType === Node.COMMENT_NODE) {
+                    toRemove.push(node);
+                } else if (node.nodeType === Node.ELEMENT_NODE) {
+                    // Buang namespace tags Word/Office (<o:p>, <w:...>, dst)
+                    if (node.tagName.includes(':')) {
+                        toRemove.push(node);
+                        continue;
+                    }
+                    // Unwrap <font>
+                    if (node.tagName === 'FONT') {
+                        const parent = node.parentNode;
+                        if (parent) {
+                            while (node.firstChild) parent.insertBefore(node.firstChild, node);
+                            toRemove.push(node);
+                        }
+                        continue;
+                    }
+                    // Ganti span tab Word (mso-tab-count) jadi spasi
+                    if (node.tagName === 'SPAN' && /mso-tab-count/i.test(node.getAttribute('style') || '')) {
+                        const space = doc.createTextNode(' ');
+                        node.parentNode?.replaceChild(space, node);
+                        continue;
+                    }
+                    // Buang class bawaan Word (MsoNormal, MsoList, dst)
+                    if (node.className && /mso|apple/i.test(node.className)) {
+                        node.removeAttribute('class');
+                    }
+                    // Bersihkan style inline: font-family, font-size, text-indent, margin, padding, mso-*
+                    if (node.hasAttribute('style')) {
+                        node.style.fontFamily = '';
+                        node.style.fontSize = '';
+                        node.style.lineHeight = '';
+                        node.style.letterSpacing = '';
+                        node.style.textIndent = '';
+                        node.style.margin = '';
+                        node.style.marginLeft = '';
+                        node.style.marginRight = '';
+                        node.style.marginTop = '';
+                        node.style.marginBottom = '';
+                        node.style.padding = '';
+                        node.style.paddingLeft = '';
+                        node.style.paddingRight = '';
+                        node.style.paddingTop = '';
+                        node.style.paddingBottom = '';
+                        let css = node.style.cssText || '';
+                        css = css.replace(/mso-[^;]+;?/gi, '')
+                                 .replace(/tab-stops?:[^;]+;?/gi, '')
+                                 .replace(/font-family:[^;]+;?/gi, '')
+                                 .replace(/font-size:[^;]+;?/gi, '')
+                                 .replace(/line-height:[^;]+;?/gi, '')
+                                 .replace(/letter-spacing:[^;]+;?/gi, '')
+                                 .replace(/text-indent:[^;]+;?/gi, '')
+                                 .replace(/(?:margin|padding)(?:-(?:left|right|top|bottom))?:[^;]+;?/gi, '')
+                                 .trim();
+                        if (css) {
+                            node.style.cssText = css;
+                        } else {
+                            node.removeAttribute('style');
+                        }
+                    }
+                    // Buang span kosong atau span yang hanya berisi spasi / &nbsp;
+                    if (node.tagName === 'SPAN') {
+                        const textOnly = (node.textContent || '').replace(/(?:&nbsp;|\u00A0|\s)+/g, '');
+                        if (!textOnly && !node.querySelector('img, svg')) {
+                            toRemove.push(node);
+                            continue;
+                        }
+                    }
+                    // Unwrap <span> kosong tanpa atribut
+                    if (node.tagName === 'SPAN' && node.attributes.length === 0) {
+                        const parent = node.parentNode;
+                        if (parent) {
+                            while (node.firstChild) parent.insertBefore(node.firstChild, node);
+                            toRemove.push(node);
+                        }
+                    }
+                }
+            }
+            toRemove.forEach(n => { if (n.parentNode) n.parentNode.removeChild(n); });
+
+            let html = doc.body.innerHTML;
+            // Ganti tab literal (\t) dengan spasi
+            html = html.replace(/\t+/g, ' ');
+            // Ganti run 2 atau lebih &nbsp; / unicode \u00A0 dengan satu spasi
+            html = html.replace(/(?:&nbsp;|\u00A0){2,}/gi, ' ');
+            // Bersihkan spasi/&nbsp; di awal dan akhir string
+            html = html.replace(/^(?:\s|&nbsp;|\u00A0)+/i, '');
+            html = html.replace(/(?:\s|&nbsp;|\u00A0)+$/i, '');
+            // Bersihkan spasi/tab yang menggantung di awal baris setelah <br>
+            html = html.replace(/(<br\s*\/?>)\s*(?:&nbsp;|\u00A0|\s)+/gi, '$1');
+            // Bersihkan spasi/tab yang menggantung di awal blok (<p>, <div>, <li>) jika ada konten setelahnya
+            html = html.replace(/(<(?:p|div|li)\b[^>]*>)\s*(?:&nbsp;|\u00A0|\s)+(?=[^<\s]|<(?!\/))/gi, '$1');
+            // Bersihkan spasi/tab sebelum tag penutup blok (</p>, </div>, </li>)
+            html = html.replace(/(?:&nbsp;|\u00A0|\s)+\s*(<\/(?:p|div|li)>)/gi, '$1');
+
+            return html;
+        } catch (e) {
+            return rawHtml
+                .replace(/<span[^>]*mso-tab-count[^>]*>.*?<\/span>/gi, ' ')
+                .replace(/(?:font-family|font-size|line-height|letter-spacing|text-indent|tab-stops?|mso-[a-z0-9\-]+|(?:margin|padding)(?:-(?:left|right|top|bottom))?)\s*:[^;"]+;?/gi, '')
+                .replace(/\t+/g, ' ')
+                .replace(/(?:&nbsp;|\u00A0){2,}/gi, ' ')
+                .replace(/^(?:\s|&nbsp;|\u00A0)+/gi, '')
+                .replace(/(?:\s|&nbsp;|\u00A0)+$/gi, '')
+                .replace(/(<br\s*\/?>)\s*(?:&nbsp;|\u00A0|\s)+/gi, '$1')
+                .replace(/(<(?:p|div|li)\b[^>]*>)\s*(?:&nbsp;|\u00A0|\s)+(?=[^<\s]|<(?!\/))/gi, '$1');
+        }
+    }
+
     function baseConfig() {
         const dark = document.documentElement.classList.contains('dark');
         const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
@@ -98,7 +224,10 @@
             content_css: dark ? 'dark' : 'default',
             convert_urls: false,
             extended_valid_elements: 'img[class|src|alt|data-latex|style|width|height]',
-            content_style: '.math-svg{max-width:100%}',
+            content_style: 'body { font-family: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important; font-size: 14px; line-height: 1.6; color: ' + (dark ? '#f1f5f9' : '#0f172a') + '; } .math-svg{max-width:100%} p, span, div { font-family: inherit !important; margin-left: 0 !important; margin-right: 0 !important; padding-left: 0 !important; padding-right: 0 !important; text-indent: 0 !important; }',
+            paste_preprocess: function (plugin, args) {
+                args.content = cleanPastedHtml(args.content);
+            },
             images_dataimg_filter: function(img) { return !img.hasAttribute('data-latex'); },
             images_upload_handler: function (blobInfo) {
                 return new Promise(function (resolve, reject) {
@@ -118,6 +247,9 @@
                 });
             },
             setup: function (editor) {
+                editor.on('PastePreProcess', function (e) {
+                    e.content = cleanPastedHtml(e.content);
+                });
                 editor.ui.registry.addButton('rumus', { text: '∑ Rumus', tooltip: 'Sisipkan rumus matematika', onAction: () => openMath(editor) });
             },
         };

@@ -92,7 +92,7 @@
                            :class="jawaban[s.uuid]===o.uuid ? 'border-primary bg-primary/5' : 'border-slate-200 dark:border-slate-600'">
                         <input type="radio" :name="'opt-'+s.uuid" :checked="jawaban[s.uuid]===o.uuid"
                                @change="jawaban[s.uuid] = o.uuid; tandaiBerubah(s.uuid)" class="text-primary focus:ring-primary flex-shrink-0">
-                        <span class="text-sm ujian-rich-body" x-html="o.teks"></span>
+                        <span class="text-sm ujian-rich-body flex-1 break-words min-w-0" x-html="o.teks"></span>
                     </label>
                 </template>
             </div>
@@ -106,7 +106,7 @@
                         <input type="checkbox" :checked="(jawaban[s.uuid]||[]).includes(o.uuid)"
                                @change="toggleMulti(s.uuid, o.uuid, $event)"
                                class="w-5 h-5 rounded-md border-2 border-slate-300 dark:border-slate-600 text-primary focus:ring-2 focus:ring-primary/30 transition cursor-pointer flex-shrink-0">
-                        <span class="text-sm ujian-rich-body break-words min-w-0" x-html="o.teks"></span>
+                        <span class="text-sm ujian-rich-body break-words min-w-0 flex-1" x-html="o.teks"></span>
                     </label>
                 </template>
             </div>
@@ -121,7 +121,7 @@
                     <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-600 space-y-2">
                         <div class="text-sm ujian-rich-body break-words bg-slate-50 dark:bg-slate-700/50 rounded-lg p-2.5" x-html="kiri"></div>
                         <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                            <template x-for="(kanan, kj) in (s.kanan_acak||[])" :key="'m-'+s.uuid+'-'+ki+'-opt-'+kanan">
+                            <template x-for="(kanan, kj) in (s.kanan_acak||[])" :key="'m-'+s.uuid+'-'+ki+'-opt-'+kj">
                                 <button type="button" @click="setPasangan(s.uuid, kiri, (jawaban[s.uuid]||{})[kiri]===kanan ? '' : kanan)"
                                         :class="(jawaban[s.uuid]||{})[kiri]===kanan ? 'border-primary bg-primary/10' : 'border-slate-200 dark:border-slate-600'"
                                         class="flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ujian-rich-body text-left">
@@ -185,8 +185,28 @@
 
 @push('styles')
 <style>
-    .ujian-rich-body { line-height: 1.6; overflow-wrap: break-word; word-wrap: break-word; }
+    .ujian-rich-body {
+        font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif !important;
+        line-height: 1.6;
+        overflow-wrap: break-word;
+        word-wrap: break-word;
+        tab-size: 2;
+        -moz-tab-size: 2;
+    }
+    .ujian-rich-body * {
+        font-family: inherit !important;
+    }
     .ujian-rich-body pre { white-space: pre-wrap; word-wrap: break-word; }
+    .ujian-rich-body p, .ujian-rich-body span { max-width: 100%; }
+    .ujian-rich-body p,
+    .ujian-rich-body div,
+    .ujian-rich-body span:not(.math-svg) {
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        text-indent: 0 !important;
+    }
     .ujian-rich-body p { margin: 0 0 .5em; }
     .ujian-rich-body p:last-child { margin-bottom: 0; }
     .ujian-rich-body ul {
